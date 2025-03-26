@@ -9,7 +9,7 @@ import plotly.express as px
 from api import get_memberful_data, fetch_all_members
 from utils import get_date_n_months_ago, is_education_member, create_download_button
 from data_processing import process_members_data, prepare_all_members_view, prepare_new_members, calculate_mrr
-from visualizations import show_member_growth, show_plan_distribution, show_plan_revenue, show_education_members
+from visualizations import show_member_growth, show_plans_and_revenue, show_education_members
 
 # App configuration
 st.set_page_config(
@@ -57,6 +57,8 @@ with st.sidebar:
             del st.session_state.members_df
         if "subs_df" in st.session_state:
             del st.session_state.subs_df
+        if "consolidated_members_cache" in st.session_state:
+            del st.session_state.consolidated_members_cache
         # Clear all dependent caches too
         for key in list(st.session_state.keys()):
             if key.endswith("_cache"):
@@ -68,10 +70,12 @@ with st.sidebar:
 if "education_feature_added" not in st.session_state:
     refresh_data = True
     st.session_state.education_feature_added = True
-    # Also clear all_members_cache to ensure it has the education flag
+    # Also clear member caches to ensure they have the education flag
     if "all_members_cache" in st.session_state:
         del st.session_state.all_members_cache
-    # st.toast("Adding education member support. Refreshing data...", icon="🔄")
+    if "consolidated_members_cache" in st.session_state:
+        del st.session_state.consolidated_members_cache
+    st.toast("Adding education member support. Refreshing data...", icon="🔄")
 
 # Check if data is already in session state
 if "members_data" not in st.session_state or refresh_data:
@@ -203,232 +207,152 @@ if 'members_df' in locals() and not members_df.empty:
     education_percentage = (education_count / active_count * 100) if active_count > 0 else 0
     col5.metric("Education Members", education_count, f"{education_percentage:.1f}% of active members")
     
-    # Visualizations
+    # Main Dashboard Tabs
     st.divider()
-    st.subheader("Visualizations")
+    
+    # Create main tabs for the dashboard
+    if "is_education" in subs_df.columns:
+        main_tabs = st.tabs(["Member Growth", "Plans and Revenue", "Education Members", "Member Directory"])
+    else:
+        main_tabs = st.tabs(["Member Growth", "Plans and Revenue", "Member Directory"])
     
     if not subs_df.empty:
-        # Create tabs for different visualizations
-        # Only include Education Members tab if we have the is_education column
-        if "is_education" in subs_df.columns:
-            viz_tabs = st.tabs(["Member Growth", "Membership Plan Distribution", "Revenue by Plan", "Education Members"])
-        else:
-            viz_tabs = st.tabs(["Member Growth", "Membership Plan Distribution", "Revenue by Plan"])
-        
         # Member Growth visualization
-        with viz_tabs[0]:
+        with main_tabs[0]:
             show_member_growth(subs_df)
         
-        # Membership Plan Distribution visualization
-        with viz_tabs[1]:
-            show_plan_distribution(subs_df)
-        
-        # Revenue by Plan visualization
-        with viz_tabs[2]:
-            show_plan_revenue(subs_df)
+        # Combined Plans and Revenue visualization
+        with main_tabs[1]:
+            show_plans_and_revenue(subs_df)
         
         # Education Members visualization (if available)
-        if "is_education" in subs_df.columns and len(viz_tabs) > 3:
-            with viz_tabs[3]:
+        if "is_education" in subs_df.columns:
+            with main_tabs[2]:
                 show_education_members(subs_df, active_count)
-    
-    # Member details section
-    st.divider()
-    st.subheader("Member details")
-    tabs = st.tabs(["All Members", "New Subscriptions (30d)", "New Subscriptions (90d)"])
-    
-    # Store member data in session state if not already there
-    if "all_members_cache" not in st.session_state and not subs_df.empty:
-        # Create a unique list of members with their subscription info
-        all_members = prepare_all_members_view(members_df, subs_df)
-        st.session_state.all_members_cache = all_members
-        
-        # Also cache available plans
-        st.session_state.available_plans = subs_df["plan"].unique().tolist()
-        
-        # Initialize filter states
-        if "show_active_only" not in st.session_state:
-            st.session_state.show_active_only = False
-        if "selected_plans" not in st.session_state:
-            st.session_state.selected_plans = []
-        if "show_education_only" not in st.session_state:
-            st.session_state.show_education_only = False
-    
-    # Function to handle filter changes without page reload
-    def update_active_filter():
-        # Toggle will be handled by Streamlit automatically
-        pass
-        
-    def update_plan_filter():
-        # Selected plans will be updated by Streamlit automatically
-        pass
-        
-    def update_education_filter():
-        # Toggle will be handled by Streamlit automatically
-        pass
-        
-    # All Members tab
-    with tabs[0]:
-        if not subs_df.empty:
-            # Add filters using session state to avoid reloads
-            st.write("Filter members:")
-            col1, col2, col3 = st.columns(3)
-            
-            # Active members filter with on_change callback
-            show_active_only = col1.checkbox(
-                "Show active members only", 
-                value=st.session_state.get("show_active_only", False),
-                key="show_active_only",
-                on_change=update_active_filter
-            )
-            
-            # Education members filter with on_change callback
-            show_education_only = col2.checkbox(
-                "Show education members only",
-                value=st.session_state.get("show_education_only", False),
-                key="show_education_only",
-                on_change=update_education_filter
-            )
-            
-            # Plan filter with on_change callback
-            available_plans = st.session_state.get("available_plans", [])
-            selected_plans = col3.multiselect(
-                "Filter by plan", 
-                options=available_plans,
-                default=st.session_state.get("selected_plans", []),
-                key="selected_plans",
-                on_change=update_plan_filter
-            )
-            
-            # Get the cached member data
-            all_members = st.session_state.get("all_members_cache", pd.DataFrame())
-            
-            # Apply filters to the cached data (client-side filtering)
-            filtered_members = all_members
-            if show_active_only:
-                filtered_members = filtered_members[filtered_members["active"] == True]
-            
-            # Only filter by education if the column exists
-            if show_education_only and "is_education" in filtered_members.columns:
-                # Add debugging info
-                if debug_mode:
-                    education_count = filtered_members["is_education"].sum()
-                    st.write(f"Found {education_count} education members in the dataset")
-                
-                # Apply the filter
-                filtered_members = filtered_members[filtered_members["is_education"] == True]
-            
-            if selected_plans:
-                filtered_members = filtered_members[filtered_members["plan"].isin(selected_plans)]
-            
-            # Display the filtered table
-            # Only include is_education column if it exists
-            if "is_education" in filtered_members.columns:
-                display_cols = ["name", "email", "plan", "active", "is_education"]
-                column_config = {
-                    "name": "Member Name",
-                    "email": "Email",
-                    "plan": "Membership Plan",
-                    "active": st.column_config.CheckboxColumn("Active"),
-                    "is_education": st.column_config.CheckboxColumn("Education Member")
-                }
-            else:
-                display_cols = ["name", "email", "plan", "active"]
-                column_config = {
-                    "name": "Member Name",
-                    "email": "Email",
-                    "plan": "Membership Plan",
-                    "active": st.column_config.CheckboxColumn("Active")
-                }
-            
-            st.dataframe(
-                filtered_members[display_cols],
-                column_config=column_config,
-                hide_index=True
-            )
-            create_download_button(filtered_members[display_cols], "made_members.csv")
-    
-    # New Subscriptions (30d) tab
-    with tabs[1]:
-        # Cache new subscriptions data for 30 days
-        if "new_subs_30d_cache" not in st.session_state and not subs_df.empty:
-            # Get unique new subscriptions for 30 days
-            new_subs_30d = prepare_new_members(subs_df, 30)
-            st.session_state.new_subs_30d_cache = new_subs_30d
-        
-        # Display cached data
-        unique_new_30d = st.session_state.get("new_subs_30d_cache", pd.DataFrame())
-        if not unique_new_30d.empty:
-            # Only include is_education column if it exists
-            if "is_education" in unique_new_30d.columns:
-                display_cols = ["member_name", "member_email", "created_at", "plan", "active", "is_education"]
-                column_config = {
-                    "member_name": "Member Name",
-                    "member_email": "Email",
-                    "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-                    "plan": "Membership Plan",
-                    "active": st.column_config.CheckboxColumn("Active"),
-                    "is_education": st.column_config.CheckboxColumn("Education Member")
-                }
-            else:
-                display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
-                column_config = {
-                    "member_name": "Member Name",
-                    "member_email": "Email",
-                    "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-                    "plan": "Membership Plan",
-                    "active": st.column_config.CheckboxColumn("Active")
-                }
-                
-            st.dataframe(
-                unique_new_30d[display_cols],
-                column_config=column_config,
-                hide_index=True
-            )
-            create_download_button(unique_new_30d[display_cols], "made_new_members_30d.csv")
+                member_directory_tab_index = 3
         else:
-            st.info("No new subscriptions in the past 30 days.")
+            member_directory_tab_index = 2
             
-    # New Subscriptions (90d) tab
-    with tabs[2]:
-        # Cache new subscriptions data for 90 days
-        if "new_subs_90d_cache" not in st.session_state and not subs_df.empty:
-            # Get unique new subscriptions for 90 days
-            new_subs_90d = prepare_new_members(subs_df, 90)
-            st.session_state.new_subs_90d_cache = new_subs_90d
-        
-        # Display cached data
-        unique_new_90d = st.session_state.get("new_subs_90d_cache", pd.DataFrame())
-        if not unique_new_90d.empty:
-            # Only include is_education column if it exists
-            if "is_education" in unique_new_90d.columns:
-                display_cols = ["member_name", "member_email", "created_at", "plan", "active", "is_education"]
-                column_config = {
-                    "member_name": "Member Name",
-                    "member_email": "Email",
-                    "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-                    "plan": "Membership Plan",
-                    "active": st.column_config.CheckboxColumn("Active"),
-                    "is_education": st.column_config.CheckboxColumn("Education Member")
-                }
-            else:
-                display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
-                column_config = {
-                    "member_name": "Member Name",
-                    "member_email": "Email",
-                    "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-                    "plan": "Membership Plan",
-                    "active": st.column_config.CheckboxColumn("Active")
-                }
+        # Member Directory tab
+        with main_tabs[member_directory_tab_index]:
+            # Store member data in session state if not already there
+            if "all_members_cache" not in st.session_state and not subs_df.empty:
+                # Create a unique list of members with their subscription info
+                all_members = prepare_all_members_view(members_df, subs_df)
+                st.session_state.all_members_cache = all_members
                 
-            st.dataframe(
-                unique_new_90d[display_cols],
-                column_config=column_config,
-                hide_index=True
-            )
-            create_download_button(unique_new_90d[display_cols], "made_new_members_90d.csv")
-        else:
-            st.info("No new subscriptions in the past 90 days.")
+                # Also cache available plans
+                st.session_state.available_plans = subs_df["plan"].unique().tolist()
+                
+                # Initialize filter states
+                if "show_active_only" not in st.session_state:
+                    st.session_state.show_active_only = False
+                if "selected_plans" not in st.session_state:
+                    st.session_state.selected_plans = []
+                if "show_education_only" not in st.session_state:
+                    st.session_state.show_education_only = False
+                    
+            # Function to handle filter changes without page reload
+            def update_active_filter():
+                # Toggle will be handled by Streamlit automatically
+                pass
+                
+            def update_plan_filter():
+                # Selected plans will be updated by Streamlit automatically
+                pass
+                
+            def update_education_filter():
+                # Toggle will be handled by Streamlit automatically
+                pass
+                
+            # Simplified consolidated member directory
+            if not subs_df.empty:
+                # Add filters using session state to avoid reloads
+                st.write("Filter members:")
+                col1, col2 = st.columns(2)
+                
+                # Active members filter with on_change callback
+                show_active_only = col1.checkbox(
+                    "Show active members only", 
+                    value=st.session_state.get("show_active_only", False),
+                    key="show_active_only",
+                    on_change=update_active_filter
+                )
+                
+                # Education members filter with on_change callback
+                show_education_only = col2.checkbox(
+                    "Show education members only",
+                    value=st.session_state.get("show_education_only", False),
+                    key="show_education_only",
+                    on_change=update_education_filter
+                )
+                
+                # Get member subscription data with join dates
+                # Get all subscriptions to show each member's join date
+                if "consolidated_members_cache" not in st.session_state:
+                    # Create a joined date column for members by getting their earliest subscription date
+                    members_with_joined = subs_df.sort_values("created_at").drop_duplicates("member_id")
+                    members_with_joined = members_with_joined[["member_id", "member_name", "member_email", "created_at", 
+                                                              "plan", "active", "is_education" if "is_education" in subs_df.columns else None]].dropna(axis=1)
+                    members_with_joined.rename(columns={"member_name": "name", "member_email": "email", "created_at": "joined_date"}, inplace=True)
+                    st.session_state.consolidated_members_cache = members_with_joined
+                
+                # Get the cached member data
+                consolidated_members = st.session_state.get("consolidated_members_cache", pd.DataFrame())
+                
+                # Apply filters to the cached data (client-side filtering)
+                filtered_members = consolidated_members.copy()
+                
+                # Filter active members if requested
+                if show_active_only:
+                    filtered_members = filtered_members[filtered_members["active"] == True]
+                
+                # Filter education members if requested
+                if show_education_only and "is_education" in filtered_members.columns:
+                    # Add debugging info
+                    if debug_mode:
+                        st.write(f"Before filtering: {len(filtered_members)} members")
+                        education_count = filtered_members["is_education"].sum()
+                        st.write(f"Found {education_count} education members in the dataset")
+                        # Show the first few education members
+                        st.write("Education members:", filtered_members[filtered_members["is_education"] == True].head(3))
+                    
+                    # Apply the filter - convert to string then boolean to ensure proper comparison
+                    filtered_members = filtered_members[filtered_members["is_education"] == True]
+                    
+                    if debug_mode:
+                        st.write(f"After filtering: {len(filtered_members)} members")
+                
+                # Set up display columns with join date
+                if "is_education" in filtered_members.columns:
+                    display_cols = ["name", "email", "joined_date", "plan", "active", "is_education"]
+                    column_config = {
+                        "name": "Member Name",
+                        "email": "Email",
+                        "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
+                        "plan": "Membership Plan",
+                        "active": st.column_config.CheckboxColumn("Active"),
+                        "is_education": st.column_config.CheckboxColumn("Education Member")
+                    }
+                else:
+                    display_cols = ["name", "email", "joined_date", "plan", "active"]
+                    column_config = {
+                        "name": "Member Name",
+                        "email": "Email", 
+                        "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
+                        "plan": "Membership Plan",
+                        "active": st.column_config.CheckboxColumn("Active")
+                    }
+                
+                # Display the complete member table with sorting capability
+                st.dataframe(
+                    filtered_members[display_cols].sort_values("joined_date", ascending=False),
+                    column_config=column_config,
+                    hide_index=True
+                )
+                
+                # Add download button
+                create_download_button(filtered_members[display_cols], "made_members.csv")
 else:
     st.warning("No member data available. Please check your API connection.")
 
