@@ -86,134 +86,186 @@ debug_mode = st.sidebar.checkbox("Debug Mode")
 st.sidebar.markdown("---")
 st.sidebar.caption("Made with ❤️ for Maine Ad + Design")
 
-# Loading indicator
-with st.spinner("Loading membership data..."):
-    # Define a function to fetch all members with pagination
-    def fetch_all_members():
-        all_members = []
-        has_next_page = True
-        after_cursor = None
+# Define a function to fetch all members with pagination
+def fetch_all_members():
+    all_members = []
+    has_next_page = True
+    after_cursor = None
+    
+    while has_next_page:
+        # Build pagination parameters
+        pagination = f'first: 100, after: "{after_cursor}"' if after_cursor else 'first: 100'
         
-        while has_next_page:
-            # Build pagination parameters
-            pagination = f'first: 100, after: "{after_cursor}"' if after_cursor else 'first: 100'
-            
-            # GraphQL query with pagination
-            paginated_query = f"""
-            query {{
-                members({pagination}) {{
-                    pageInfo {{
-                        hasNextPage
-                        endCursor
-                    }}
-                    nodes {{
+        # GraphQL query with pagination
+        paginated_query = f"""
+        query {{
+            members({pagination}) {{
+                pageInfo {{
+                    hasNextPage
+                    endCursor
+                }}
+                nodes {{
+                    id
+                    email
+                    fullName
+                    totalSpendCents
+                    subscriptions {{
                         id
-                        email
-                        fullName
-                        totalSpendCents
-                        subscriptions {{
-                            id
-                            active
-                            autorenew
-                            createdAt
-                            expiresAt
-                            plan {{
-                                name
-                                priceCents
-                                intervalUnit
-                                intervalCount
-                            }}
+                        active
+                        autorenew
+                        createdAt
+                        expiresAt
+                        plan {{
+                            name
+                            priceCents
+                            intervalUnit
+                            intervalCount
                         }}
                     }}
                 }}
             }}
-            """
-            
-            # Make the API request
-            page_result = get_memberful_data(paginated_query)
-            
-            if not page_result or "data" not in page_result:
-                break
-                
-            # Extract member data
-            page_data = page_result.get("data", {}).get("members", {})
-            page_members = page_data.get("nodes", [])
-            all_members.extend(page_members)
-            
-            # Update pagination info
-            page_info = page_data.get("pageInfo", {})
-            has_next_page = page_info.get("hasNextPage", False)
-            after_cursor = page_info.get("endCursor")
-            
-            if debug_mode:
-                st.write(f"Fetched page with {len(page_members)} members. More pages: {has_next_page}")
+        }}
+        """
         
-        return all_members
-    
-    # Fetch all members with pagination
-    progress_text = "Fetching member data (this may take a moment)..."
-    progress_bar = st.progress(0, text=progress_text)
-    
-    for percent_complete in range(0, 100, 10):  # Simulate progress in increments
-        time.sleep(0.1)  # Simulate work being done
-        progress_bar.progress(percent_complete, text=progress_text)
-    
-    members_data = fetch_all_members()
-    progress_bar.progress(100, text="Data fetching complete!")
-    progress_bar.empty()  # Remove the progress bar when complete
-    
-    if debug_mode:
-        st.expander("Members Data Sample").json(members_data[:5] if members_data else [])
-    
-    if not members_data:
-        st.error("Failed to load data. Please check API key and connection.")
-        st.stop()
-    
-    # Process data into a usable format
-    st.toast(f"Successfully loaded data for {len(members_data)} members.", icon="🎉")
-    
-    # Create dataframes for analysis
-    members_df = pd.DataFrame([
-        {
-            "id": member["id"],
-            "email": member["email"],
-            "name": member["fullName"],
-            "total_spend_cents": member.get("totalSpendCents", 0)
-        }
-        for member in members_data
-    ])
-    
-    # Create subscriptions dataframe
-    subscriptions = []
-    for member in members_data:
-        member_id = member["id"]
-        member_name = member["fullName"]
-        member_email = member["email"]
+        # Make the API request
+        page_result = get_memberful_data(paginated_query)
         
-        for sub in member.get("subscriptions", []):
-            subscriptions.append({
-                "subscription_id": sub["id"],
-                "member_id": member_id,
-                "member_name": member_name,
-                "member_email": member_email,
-                "active": sub.get("active", False),
-                "auto_renew": sub.get("autorenew", False),
-                "plan": sub.get("plan", {}).get("name", "Unknown"),
-                "price_cents": sub.get("plan", {}).get("priceCents", 0),
-                "interval_unit": sub.get("plan", {}).get("intervalUnit", ""),
-                "interval_count": sub.get("plan", {}).get("intervalCount", 1),
-                "created_at": sub.get("createdAt"),
-                "expires_at": sub.get("expiresAt")
-            })
+        if not page_result or "data" not in page_result:
+            break
+            
+        # Extract member data
+        page_data = page_result.get("data", {}).get("members", {})
+        page_members = page_data.get("nodes", [])
+        all_members.extend(page_members)
+        
+        # Update pagination info
+        page_info = page_data.get("pageInfo", {})
+        has_next_page = page_info.get("hasNextPage", False)
+        after_cursor = page_info.get("endCursor")
+        
+        if debug_mode:
+            st.write(f"Fetched page with {len(page_members)} members. More pages: {has_next_page}")
     
-    subs_df = pd.DataFrame(subscriptions)
+    return all_members
+
+# Add a refresh button in the sidebar
+refresh_data = False
+
+# Check if the data cache should expire (every 24 hours)
+if "last_fetch_time" in st.session_state:
+    last_fetch_time = st.session_state.last_fetch_time
+    current_time = datetime.now()
+    time_difference = current_time - last_fetch_time
+    # Force refresh if data is older than 24 hours
+    if time_difference.total_seconds() > 24 * 60 * 60:
+        refresh_data = True
+        st.toast("Data cache expired. Refreshing...", icon="🔄")
+
+with st.sidebar:
+    # Show the last updated time
+    if "last_fetch_time" in st.session_state:
+        last_fetch = st.session_state.last_fetch_time.strftime("%b %d, %Y at %I:%M %p")
+        st.caption(f"Last updated: {last_fetch}")
     
-    if not subs_df.empty:
-        # Convert Unix timestamps to datetime
-        for col in ["created_at", "expires_at"]:
-            if col in subs_df.columns:
-                # Convert Unix timestamp (seconds) to datetime
-                subs_df[col] = pd.to_datetime(subs_df[col], unit='s')
+    # Add refresh button
+    if st.button("🔄 Refresh Data"):
+        # Clear the cache to force a refresh
+        if "members_data" in st.session_state:
+            del st.session_state.members_data
+        if "members_df" in st.session_state:
+            del st.session_state.members_df
+        if "subs_df" in st.session_state:
+            del st.session_state.subs_df
+        # Clear all dependent caches too
+        for key in list(st.session_state.keys()):
+            if key.endswith("_cache"):
+                del st.session_state[key]
+        refresh_data = True
+        st.toast("Data cache cleared. Refreshing...", icon="🔄")
+
+# Check if data is already in session state
+if "members_data" not in st.session_state or refresh_data:
+    # Loading indicator
+    with st.spinner("Loading membership data..."):        
+        # Fetch all members with pagination
+        progress_text = "Fetching member data (this may take a moment)..."
+        progress_bar = st.progress(0, text=progress_text)
+        
+        for percent_complete in range(0, 100, 10):  # Simulate progress in increments
+            time.sleep(0.1)  # Simulate work being done
+            progress_bar.progress(percent_complete, text=progress_text)
+        
+        members_data = fetch_all_members()
+        progress_bar.progress(100, text="Data fetching complete!")
+        progress_bar.empty()  # Remove the progress bar when complete
+        
+        if debug_mode:
+            st.expander("Members Data Sample").json(members_data[:5] if members_data else [])
+        
+        if not members_data:
+            st.error("Failed to load data. Please check API key and connection.")
+            st.stop()
+        
+        # Process data into a usable format
+        st.toast(f"Successfully loaded data for {len(members_data)} members.", icon="🎉")
+        
+        # Cache the raw data
+        st.session_state.members_data = members_data
+        
+        # Create dataframes for analysis
+        members_df = pd.DataFrame([
+            {
+                "id": member["id"],
+                "email": member["email"],
+                "name": member["fullName"],
+                "total_spend_cents": member.get("totalSpendCents", 0)
+            }
+            for member in members_data
+        ])
+        
+        # Create subscriptions dataframe
+        subscriptions = []
+        for member in members_data:
+            member_id = member["id"]
+            member_name = member["fullName"]
+            member_email = member["email"]
+            
+            for sub in member.get("subscriptions", []):
+                subscriptions.append({
+                    "subscription_id": sub["id"],
+                    "member_id": member_id,
+                    "member_name": member_name,
+                    "member_email": member_email,
+                    "active": sub.get("active", False),
+                    "auto_renew": sub.get("autorenew", False),
+                    "plan": sub.get("plan", {}).get("name", "Unknown"),
+                    "price_cents": sub.get("plan", {}).get("priceCents", 0),
+                    "interval_unit": sub.get("plan", {}).get("intervalUnit", ""),
+                    "interval_count": sub.get("plan", {}).get("intervalCount", 1),
+                    "created_at": sub.get("createdAt"),
+                    "expires_at": sub.get("expiresAt")
+                })
+        
+        subs_df = pd.DataFrame(subscriptions)
+        
+        if not subs_df.empty:
+            # Convert Unix timestamps to datetime
+            for col in ["created_at", "expires_at"]:
+                if col in subs_df.columns:
+                    # Convert Unix timestamp (seconds) to datetime
+                    subs_df[col] = pd.to_datetime(subs_df[col], unit='s')
+        
+        # Cache the processed dataframes
+        st.session_state.members_df = members_df
+        st.session_state.subs_df = subs_df
+        
+        # Update the last fetch timestamp
+        st.session_state.last_fetch_time = datetime.now()
+else:
+    # Use cached data
+    members_data = st.session_state.members_data
+    members_df = st.session_state.members_df
+    subs_df = st.session_state.subs_df
 
 # Display membership metrics and visualizations
 if 'members_df' in locals() and not members_df.empty:
@@ -503,26 +555,61 @@ if 'members_df' in locals() and not members_df.empty:
             mime="text/csv",
         )
     
+    # Store member data in session state if not already there
+    if "all_members_cache" not in st.session_state and not subs_df.empty:
+        # Create a unique list of members with their subscription info
+        # Get latest subscription for each member to show current status
+        member_subs = subs_df.sort_values("created_at", ascending=False).drop_duplicates("member_id")
+        all_members = pd.merge(members_df, member_subs[["member_id", "active", "plan", "subscription_id"]], 
+                              left_on="id", right_on="member_id", how="left")
+        st.session_state.all_members_cache = all_members
+        
+        # Also cache available plans
+        st.session_state.available_plans = subs_df["plan"].unique().tolist()
+        
+        # Initialize filter states
+        if "show_active_only" not in st.session_state:
+            st.session_state.show_active_only = False
+        if "selected_plans" not in st.session_state:
+            st.session_state.selected_plans = []
+    
+    # Function to handle filter changes without page reload
+    def update_active_filter():
+        # Toggle will be handled by Streamlit automatically
+        pass
+        
+    def update_plan_filter():
+        # Selected plans will be updated by Streamlit automatically
+        pass
+        
     with tabs[0]:
         if not subs_df.empty:
-            # Create a unique list of members with their subscription info
-            # Get latest subscription for each member to show current status
-            member_subs = subs_df.sort_values("created_at", ascending=False).drop_duplicates("member_id")
-            all_members = pd.merge(members_df, member_subs[["member_id", "active", "plan", "subscription_id"]], 
-                                  left_on="id", right_on="member_id", how="left")
-            
-            # Add filters
+            # Add filters using session state to avoid reloads
             st.write("Filter members:")
             col1, col2 = st.columns(2)
             
-            # Active members filter
-            show_active_only = col1.checkbox("Show active members only", value=False)
+            # Active members filter with on_change callback
+            show_active_only = col1.checkbox(
+                "Show active members only", 
+                value=st.session_state.get("show_active_only", False),
+                key="show_active_only",
+                on_change=update_active_filter
+            )
             
-            # Plan filter
-            available_plans = subs_df["plan"].unique().tolist()
-            selected_plans = col2.multiselect("Filter by plan", options=available_plans)
+            # Plan filter with on_change callback
+            available_plans = st.session_state.get("available_plans", [])
+            selected_plans = col2.multiselect(
+                "Filter by plan", 
+                options=available_plans,
+                default=st.session_state.get("selected_plans", []),
+                key="selected_plans",
+                on_change=update_plan_filter
+            )
             
-            # Apply filters
+            # Get the cached member data
+            all_members = st.session_state.get("all_members_cache", pd.DataFrame())
+            
+            # Apply filters to the cached data (client-side filtering)
             filtered_members = all_members
             if show_active_only:
                 filtered_members = filtered_members[filtered_members["active"] == True]
@@ -545,9 +632,16 @@ if 'members_df' in locals() and not members_df.empty:
             create_download_button(filtered_members[display_cols], "made_members.csv")
     
     with tabs[1]:
-        if not new_subs_30d.empty:
-            # Get unique new subscriptions
-            unique_new_30d = new_subs_30d.drop_duplicates("subscription_id")
+        # Cache new subscriptions data for 30 days
+        if "new_subs_30d_cache" not in st.session_state and not subs_df.empty:
+            # Get unique new subscriptions for 30 days
+            new_subs_30d = subs_df[subs_df["created_at"] >= past_30_days]
+            unique_new_30d = new_subs_30d.drop_duplicates("subscription_id") if not new_subs_30d.empty else pd.DataFrame()
+            st.session_state.new_subs_30d_cache = unique_new_30d
+        
+        # Display cached data
+        unique_new_30d = st.session_state.get("new_subs_30d_cache", pd.DataFrame())
+        if not unique_new_30d.empty:
             display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
             st.dataframe(
                 unique_new_30d[display_cols],
@@ -565,10 +659,16 @@ if 'members_df' in locals() and not members_df.empty:
             st.info("No new subscriptions in the past 30 days.")
             
     with tabs[2]:
-        new_subs_90d = subs_df[subs_df["created_at"] >= past_90_days] if not subs_df.empty else pd.DataFrame()
-        if not new_subs_90d.empty:
-            # Get unique new subscriptions
-            unique_new_90d = new_subs_90d.drop_duplicates("subscription_id")
+        # Cache new subscriptions data for 90 days
+        if "new_subs_90d_cache" not in st.session_state and not subs_df.empty:
+            # Get unique new subscriptions for 90 days
+            new_subs_90d = subs_df[subs_df["created_at"] >= past_90_days]
+            unique_new_90d = new_subs_90d.drop_duplicates("subscription_id") if not new_subs_90d.empty else pd.DataFrame()
+            st.session_state.new_subs_90d_cache = unique_new_90d
+        
+        # Display cached data
+        unique_new_90d = st.session_state.get("new_subs_90d_cache", pd.DataFrame())
+        if not unique_new_90d.empty:
             display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
             st.dataframe(
                 unique_new_90d[display_cols],
