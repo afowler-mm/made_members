@@ -467,17 +467,23 @@ def show_education_members(subs_df, active_count):
     
     # Display education members table
     st.subheader("Education members details")
-    edu_display = education_members.drop_duplicates("member_id")[
-        ["member_name", "member_email", "plan", "created_at"]
-    ]
+    edu_display = education_members.drop_duplicates("member_id")
+    
+    # Add Memberful admin link
+    edu_display["admin_link"] = edu_display["member_id"].apply(
+        lambda id: f"https://made.memberful.com/admin/members/{id}"
+    )
     
     st.dataframe(
-        edu_display,
+        edu_display[[
+            "member_name", "member_email", "plan", "created_at", "admin_link"
+        ]],
         column_config={
             "member_name": "Member Name",
             "member_email": "Email",
             "plan": "Membership Plan",
-            "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY")
+            "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
+            "admin_link": st.column_config.LinkColumn("Memberful Admin")
         },
         hide_index=True
     )

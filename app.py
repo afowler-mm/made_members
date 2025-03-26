@@ -140,75 +140,107 @@ if 'members_df' in locals() and not members_df.empty:
     past_90_days = today - timedelta(days=90)
     past_year = today - timedelta(days=365)
     
-    # Active members last year (for comparison)
-    one_year_ago = today - timedelta(days=365)
-    active_last_year = len(subs_df[(subs_df["active"] == True) & 
-                             (subs_df["created_at"] <= one_year_ago)]) if not subs_df.empty else 0
-    
-    # Calculate yearly growth percentage
-    # yearly_growth = active_count - active_last_year
-    # This will be useful once we have a full year of data
-    # col1.metric("Active Members", active_count, f"{yearly_growth:+d} from last year")
-    col1.metric("Active members", active_count)
-    
-    # Display MRR
+    # Calculate counts for different membership types
     if not subs_df.empty:
-        # Calculate MRR from last month (30 days ago)
+        # Current active members by plan type
+        active_subs = subs_df[subs_df["active"] == True]
+        
+        # Individual members
+        individual_members = active_subs[active_subs["plan"] == "Individual membership"]
+        individual_count = len(individual_members.drop_duplicates("member_id"))
+        
+        # Small business members - count both accounts and total members
+        small_business_members = active_subs[active_subs["plan"] == "Small business membership"]
+        small_business_accounts = len(small_business_members.drop_duplicates("subscription_id"))
+        small_business_count = len(small_business_members.drop_duplicates("member_id"))
+        
+        # Large business members - count both accounts and total members
+        large_business_members = active_subs[active_subs["plan"] == "Large business membership"]
+        large_business_accounts = len(large_business_members.drop_duplicates("subscription_id"))
+        large_business_count = len(large_business_members.drop_duplicates("member_id"))
+        
+        # For month-over-month comparisons, get the active members from 30 days ago
         thirty_days_ago = today - timedelta(days=30)
         
+        # Get a snapshot of active members 30 days ago
+        active_month_ago = subs_df[
+            (subs_df["created_at"] <= thirty_days_ago) & 
+            ((subs_df["expires_at"] > thirty_days_ago) | (subs_df["expires_at"].isna()))
+        ]
+        
+        # Get counts by plan type 30 days ago
+        individual_month_ago = active_month_ago[active_month_ago["plan"] == "Individual membership"]
+        individual_count_month_ago = len(individual_month_ago.drop_duplicates("member_id"))
+        individual_change = individual_count - individual_count_month_ago
+        
+        small_business_month_ago = active_month_ago[active_month_ago["plan"] == "Small business membership"]
+        small_business_accounts_month_ago = len(small_business_month_ago.drop_duplicates("subscription_id"))
+        small_business_count_month_ago = len(small_business_month_ago.drop_duplicates("member_id"))
+        small_business_accounts_change = small_business_accounts - small_business_accounts_month_ago
+        small_business_change = small_business_count - small_business_count_month_ago
+        
+        large_business_month_ago = active_month_ago[active_month_ago["plan"] == "Large business membership"]
+        large_business_accounts_month_ago = len(large_business_month_ago.drop_duplicates("subscription_id"))
+        large_business_count_month_ago = len(large_business_month_ago.drop_duplicates("member_id"))
+        large_business_accounts_change = large_business_accounts - large_business_accounts_month_ago
+        large_business_change = large_business_count - large_business_count_month_ago
+        
+        # Calculate education members month-over-month
         if "is_education" in subs_df.columns:
-            active_month_ago = subs_df[
-                (subs_df["created_at"] <= thirty_days_ago) & 
-                ((subs_df["expires_at"] > thirty_days_ago) | (subs_df["expires_at"].isna())) &
-                (subs_df["is_education"] == False)
-            ].drop_duplicates("subscription_id")
+            education_month_ago = active_month_ago[active_month_ago["is_education"] == True]
+            education_count_month_ago = len(education_month_ago.drop_duplicates("member_id"))
+            education_change = education_count - education_count_month_ago
         else:
-            active_month_ago = subs_df[
-                (subs_df["created_at"] <= thirty_days_ago) & 
-                ((subs_df["expires_at"] > thirty_days_ago) | (subs_df["expires_at"].isna()))
-            ].drop_duplicates("subscription_id")
+            education_change = 0
         
-        # Calculate MRR from those subscriptions
-        previous_mrr = active_month_ago["monthly_value"].sum() / 100 if not active_month_ago.empty else 0
+        # Calculate MRR from last month
+        paying_month_ago = active_month_ago
+        if "is_education" in subs_df.columns:
+            paying_month_ago = paying_month_ago[paying_month_ago["is_education"] == False]
+        paying_month_ago = paying_month_ago.drop_duplicates("subscription_id")
+        previous_mrr = paying_month_ago["monthly_value"].sum() / 100 if not paying_month_ago.empty else 0
         
-        # Calculate month-over-month change
+        # Calculate month-over-month change for MRR
         mrr_change = current_mrr - previous_mrr
         mrr_change_percent = (mrr_change / previous_mrr * 100) if previous_mrr > 0 else 0
         
+        # Display metrics with month-over-month changes
+        col1.metric(
+            "Individual members 👩‍🎨", 
+            individual_count,
+            f"{individual_change:+d} from last month"
+        )
+        
         col2.metric(
-            "Monthly recurring revenue", 
+            "Small business accounts", 
+            f"{small_business_accounts} ({small_business_count}👩‍🎨)",
+            f"{small_business_accounts_change:+d} from last month"
+        )
+        
+        col3.metric(
+            "Large business accounts", 
+            f"{large_business_accounts} ({large_business_count}👩‍🎨)",
+            f"{large_business_accounts_change:+d} from last month"
+        )
+        
+        col4.metric(
+            "Education", 
+            f"{education_count}",
+            f"{education_change:+d} from last month"
+        )
+        
+        col5.metric(
+            "Monthly revenue", 
             f"${current_mrr:,.2f}", 
             f"{mrr_change_percent:+.1f}% from last month"
         )
-        
-        # Display paying members count (vs total members)
-        non_education_count = active_count - education_count
-        col3.metric(
-            "Paying members", 
-            paying_members_count,
-            f"of {non_education_count} non-education members"
-        )
     else:
-        col2.metric("Monthly Recurring Revenue", "$0.00")
-        col3.metric("Paying Members", 0)
-    
-    # New members in last 30 days
-    new_subs_30d = prepare_new_members(subs_df, 30)
-    new_count_30d = len(new_subs_30d)
-    
-    # New members in the 30 days before that (for comparison)
-    prev_30_days = past_30_days - timedelta(days=30)
-    prev_period_subs = subs_df[(subs_df["created_at"] >= prev_30_days) & 
-                         (subs_df["created_at"] < past_30_days)]
-    new_prev_30d = len(prev_period_subs.drop_duplicates("subscription_id")) if not prev_period_subs.empty else 0
-    
-    # Calculate monthly growth delta
-    monthly_growth = new_count_30d - new_prev_30d
-    col4.metric("New subscriptions, last 30 days", new_count_30d, f"{monthly_growth:+d} vs previous 30 days")
-    
-    # Education members count
-    education_percentage = (education_count / active_count * 100) if active_count > 0 else 0
-    col5.metric("Education members", education_count, f"{education_percentage:.1f}% of active members")
+        # Display placeholders if no data
+        col1.metric("Individual members 👩‍🎨", 0)
+        col2.metric("Small business accounts", "0 (0👩‍🎨)")
+        col3.metric("Large business accounts", "0🏙️ (0👩‍🎨)")
+        col4.metric("Education 🎓", "0")
+        col5.metric("Monthly revenue 💰", "$0.00")
     
     # Main Dashboard Tabs
     st.divider()
@@ -311,25 +343,32 @@ if 'members_df' in locals() and not members_df.empty:
                     if debug_mode:
                         st.write(f"After filtering: {len(filtered_members)} members")
                 
+                # Add a Memberful admin link column
+                filtered_members["admin_link"] = filtered_members["member_id"].apply(
+                    lambda id: f"https://made.memberful.com/admin/members/{id}"
+                )
+                
                 # Set up display columns with join date
                 if "is_education" in filtered_members.columns:
-                    display_cols = ["name", "email", "joined_date", "plan", "active", "is_education"]
+                    display_cols = ["name", "email", "joined_date", "plan", "active", "is_education", "admin_link"]
                     column_config = {
                         "name": "Member Name",
                         "email": "Email",
                         "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
                         "plan": "Membership Plan",
                         "active": st.column_config.CheckboxColumn("Active"),
-                        "is_education": st.column_config.CheckboxColumn("Education Member")
+                        "is_education": st.column_config.CheckboxColumn("Education Member"),
+                        "admin_link": st.column_config.LinkColumn("Memberful Admin")
                     }
                 else:
-                    display_cols = ["name", "email", "joined_date", "plan", "active"]
+                    display_cols = ["name", "email", "joined_date", "plan", "active", "admin_link"]
                     column_config = {
                         "name": "Member Name",
                         "email": "Email", 
                         "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
                         "plan": "Membership Plan",
-                        "active": st.column_config.CheckboxColumn("Active")
+                        "active": st.column_config.CheckboxColumn("Active"),
+                        "admin_link": st.column_config.LinkColumn("Memberful Admin")
                     }
                 
                 # Display the complete member table with sorting capability
