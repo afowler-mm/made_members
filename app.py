@@ -67,6 +67,7 @@ with st.sidebar:
         st.toast("Data cache cleared. Refreshing...", icon="🔄")
 
 # For education feature, force a refresh when running the app for the first time with the new code
+# I think we can drop this now that it's been added?
 if "education_feature_added" not in st.session_state:
     refresh_data = True
     st.session_state.education_feature_added = True
@@ -75,7 +76,7 @@ if "education_feature_added" not in st.session_state:
         del st.session_state.all_members_cache
     if "consolidated_members_cache" in st.session_state:
         del st.session_state.consolidated_members_cache
-    st.toast("Adding education member support. Refreshing data...", icon="🔄")
+    # st.toast("Adding education member support. Refreshing data...", icon="🔄")
 
 # Check if data is already in session state
 if "members_data" not in st.session_state or refresh_data:
@@ -251,41 +252,26 @@ if 'members_df' in locals() and not members_df.empty:
                     st.session_state.selected_plans = []
                 if "show_education_only" not in st.session_state:
                     st.session_state.show_education_only = False
-                    
-            # Function to handle filter changes without page reload
-            def update_active_filter():
-                # Toggle will be handled by Streamlit automatically
-                pass
                 
-            def update_plan_filter():
-                # Selected plans will be updated by Streamlit automatically
-                pass
-                
-            def update_education_filter():
-                # Toggle will be handled by Streamlit automatically
-                pass
                 
             # Simplified consolidated member directory
             if not subs_df.empty:
                 # Add filters using session state to avoid reloads
-                st.write("Filter members:")
                 col1, col2 = st.columns(2)
                 
                 # Active members filter with on_change callback
                 show_active_only = col1.checkbox(
                     "Show active members only", 
-                    value=st.session_state.get("show_active_only", False),
-                    key="show_active_only",
-                    on_change=update_active_filter
-                )
+                    value=st.session_state.get("show_active_only", True),
+                    key="show_active_only"
+                    )
                 
                 # Education members filter with on_change callback
                 show_education_only = col2.checkbox(
                     "Show education members only",
                     value=st.session_state.get("show_education_only", False),
-                    key="show_education_only",
-                    on_change=update_education_filter
-                )
+                    key="show_education_only"
+                    )
                 
                 # Get member subscription data with join dates
                 # Get all subscriptions to show each member's join date

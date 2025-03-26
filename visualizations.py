@@ -8,86 +8,243 @@ from utils import clean_period_data, create_download_button
 from datetime import datetime
 
 def show_member_growth(subs_df):
-    """Show member growth visualization using native Streamlit charts"""
+    """Show member growth visualization using Streamlit charts"""
     if subs_df.empty:
         st.info("No subscription data available for growth chart.")
         return
-        
-    # Prepare data for growth chart
+    
+    # PART 1: Subscription Changes by Month (New/Canceled/Net)
+    st.subheader("Subscription Changes by Month")
+    
     # Get new subscriptions by month
     subs_df["month"] = subs_df["created_at"].dt.to_period("M")
     
-    # Filter to data only since July 2024
+    # Filter to recent data (since July 2024)
     start_date = datetime(2024, 7, 1)
     recent_subs = subs_df[subs_df["created_at"] >= start_date]
     
-    # Get new by month
-    new_by_month = recent_subs.groupby(recent_subs["month"]).size().reset_index(name="new")
+    # Count only unique subscriptions to avoid double-counting
+    unique_subs = recent_subs.drop_duplicates('subscription_id')
+    
+    # Group by month to get new subscriptions
+    new_by_month = unique_subs.groupby(unique_subs["month"]).size().reset_index(name="new")
     
     # Get expired/canceled subscriptions by month
-    expired_subs = recent_subs[recent_subs["expires_at"].notna()]
-    expired_subs["end_month"] = expired_subs["expires_at"].dt.to_period("M")
-    churn_by_month = expired_subs.groupby(expired_subs["end_month"]).size().reset_index(name="churned")
+    today = datetime.now()
+    expired_subs = recent_subs[(recent_subs["expires_at"].notna()) & 
+                             (recent_subs["expires_at"] <= today) & 
+                             (recent_subs["active"] == False)]
     
-    # Merge the data
-    growth_data = pd.merge(new_by_month, churn_by_month, left_on="month", right_on="end_month", how="outer").fillna(0)
+    # Process expiration dates into months and count unique cancellations
+    churned_by_month = pd.DataFrame(columns=["month", "churned"])
+    if not expired_subs.empty:
+        expired_subs["month"] = expired_subs["expires_at"].dt.to_period("M")
+        churned_by_month = expired_subs.drop_duplicates('subscription_id').groupby("month").size().reset_index(name="churned")
     
-    # Clean and prepare the data
-    growth_data = clean_period_data(growth_data)
+    # Create a list of all unique months from both dataframes
+    all_months = pd.concat([
+        new_by_month["month"] if not new_by_month.empty else pd.Series(dtype='period[M]'),
+        churned_by_month["month"] if not churned_by_month.empty else pd.Series(dtype='period[M]')
+    ]).unique()
+    
+    # Create a dataframe with all months
+    monthly_changes = pd.DataFrame({"month": all_months})
+    
+    # Merge in the new and churned values
+    monthly_changes = pd.merge(monthly_changes, new_by_month, on="month", how="left").fillna(0)
+    monthly_changes = pd.merge(monthly_changes, churned_by_month, on="month", how="left").fillna(0)
     
     # Calculate net change
-    growth_data["net"] = growth_data["new"] - growth_data["churned"]
+    monthly_changes["net"] = monthly_changes["new"] - monthly_changes["churned"]
     
     # Format month strings for display
-    month_display = []
-    for _, row in growth_data.iterrows():
-        if row["sort_key"] == 0:
-            continue
+    monthly_changes["month_str"] = monthly_changes["month"].astype(str)
+    
+    # Convert to datetime for proper sorting
+    monthly_changes["month_dt"] = monthly_changes["month_str"].apply(
+        lambda m: datetime.strptime(m, "%Y-%m") if "-" in m else None
+    )
+    
+    # Sort by date
+    monthly_changes = monthly_changes.sort_values("month_dt")
+    
+    # Format month names nicely
+    monthly_changes["display_month"] = monthly_changes["month_dt"].apply(
+        lambda dt: dt.strftime("%b %Y") if pd.notna(dt) else ""
+    )
+    
+    # Sort monthly_changes chronologically first
+    monthly_changes = monthly_changes.sort_values("month_dt")
+    
+    # Display explanatory text
+    if monthly_changes["churned"].sum() == 0:
+        pass
+    else:
+        st.caption("Shows monthly subscription activity: new additions, cancellations, and lapses")
+    
+    # Use Plotly for better control over x-axis ordering
+    fig = px.bar(
+        monthly_changes,
+        x="display_month",
+        y=["new", "churned"],
+        barmode="group",
+        labels={
+            "display_month": "Month",
+            "new": "New Subscriptions",
+            "churned": "Cancellations",
+            "value": "Count",
+            "variable": "Type"
+        },
+        title=""
+    )
+    
+    # Negate churned values for visualization
+    fig.update_traces(
+        y=[-y for y in monthly_changes["churned"].values],
+        selector=dict(name="churned")
+    )
+    
+    # Set custom axis labels and ensure correct order
+    fig.update_layout(
+        xaxis=dict(
+            categoryorder='array',
+            categoryarray=monthly_changes["display_month"].tolist(),
+            title=""
+        ),
+        yaxis=dict(title=""),
+        legend_title_text="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    # Update trace names
+    newnames = {'new': 'New Subscriptions', 'churned': 'Cancellations'}
+    fig.for_each_trace(lambda t: t.update(name = newnames[t.name]))
+    
+    # Display the plotly chart
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # PART 2: Total Membership Over Time
+    st.subheader("Total Membership by Month")
+    
+    # Calculate the current active member count
+    active_members = subs_df[subs_df["active"] == True]
+    current_active_count = len(active_members.drop_duplicates("member_id"))
+    
+    # For each month, calculate the total active members working backwards from current count
+    all_months_sorted = sorted(all_months)
+    
+    # Create a DataFrame for tracking membership over time
+    membership_data = []
+    
+    # Start with the current total and work backwards
+    running_total = current_active_count
+    
+    # First, create a temporary list to build the data backwards
+    temp_membership_data = []
+    
+    # Reverse the months to calculate backwards from current
+    for i, month in enumerate(reversed(all_months_sorted)):
+        # Get data for this month in our changes dataframe
+        month_data = monthly_changes[monthly_changes["month"] == month]
+        
+        if not month_data.empty:
+            # Get the month string for display
+            display_month = month_data["display_month"].iloc[0]
             
-        # Create nicely formatted month label (Jan 2023)
-        try:
-            if isinstance(row["month"], pd.Period):
-                month_name = row["month"].strftime("%b %Y")
+            # Get the change numbers for this month
+            new_members = int(month_data["new"].iloc[0])
+            churned_members = int(month_data["churned"].iloc[0])
+            
+            # If this is the most recent month (first in reversed loop)
+            if i == 0:
+                # For the latest month, keep the current count
+                month_total = running_total
             else:
-                # Parse from string (YYYY-MM)
-                parts = row["month_str"].split('-')
-                if len(parts) == 2:
-                    year, month = int(parts[0]), int(parts[1])
-                    month_name = f"{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month-1]} {year}"
-                else:
-                    continue
-            month_display.append(month_name)
-        except Exception:
-            continue
+                # For earlier months, reverse-calculate the total
+                # by subtracting new members and adding churned members
+                running_total = running_total - new_members + churned_members
+                month_total = running_total
+            
+            # Add to our temporary data
+            temp_membership_data.append({
+                "Month": display_month,
+                "Continuing Members": month_total - new_members,
+                "New Members": new_members,
+                "Cancelled Members": -churned_members if churned_members > 0 else 0,
+                "Total Active": month_total
+            })
     
-    # Create pivot data for bar chart    
-    st.subheader("Member Growth by Month")
+    # Reverse the data back to chronological order
+    membership_data = list(reversed(temp_membership_data))
     
-    # Prepare data for streamlit bar chart
-    # Convert to negative values individually before creating the list
-    churned_values = [-x for x in growth_data["churned"].tolist()[:len(month_display)]]
+    # Create dataframe for the total membership chart
+    membership_df = pd.DataFrame(membership_data)
     
-    chart_data = pd.DataFrame({
-        "Month": month_display,
-        "New": growth_data["new"].tolist()[:len(month_display)],
-        "Churned": churned_values,
-        "Net": growth_data["net"].tolist()[:len(month_display)],
-    })
-    
-    # Set the month as the index
-    chart_data = chart_data.set_index("Month")
-    
-    # Display the bar chart
-    st.bar_chart(chart_data)
-    
-    # Add a small legend
-    col1, col2, col3 = st.columns(3)
-    col1.color_picker("New", "#FF9900", disabled=True)
-    col1.write("New Members")
-    col2.color_picker("Churned", "#00CCFF", disabled=True)
-    col2.write("Churned Members")
-    col3.color_picker("Net", "#33FF99", disabled=True)
-    col3.write("Net Change")
+    if not membership_df.empty:
+        # Create datetime for sorting
+        membership_df["Month_dt"] = pd.to_datetime([
+            datetime.strptime(m, "%b %Y") if isinstance(m, str) else None 
+            for m in membership_df["Month"]
+        ])
+        
+        # Sort by date
+        membership_df = membership_df.sort_values("Month_dt")
+        
+        # Display explanation
+        st.caption("Shows the total active membership each month, broken down by continuing, new, and cancelled members")
+        
+        # Determine columns for stacked bar chart
+        stack_columns = ["Continuing Members", "New Members"]
+        # Only include cancelled if we have any
+        if membership_df["Cancelled Members"].sum() < 0:
+            stack_columns.append("Cancelled Members")
+        
+        # Create a stacked bar chart using Plotly
+        fig = px.bar(
+            membership_df, 
+            x="Month", 
+            y=stack_columns,
+            title="",
+            labels={"value": "Members", "variable": "Type"}
+        )
+        
+        # Ensure proper chronological order of months on x-axis
+        fig.update_layout(
+            xaxis=dict(
+                categoryorder='array',
+                categoryarray=membership_df["Month"].tolist(),
+                title=""
+            ),
+            yaxis=dict(title=""),
+            legend_title_text=""
+        )
+        
+        # Display the stacked bar chart
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Create line chart for total active members
+        line_fig = px.line(
+            membership_df, 
+            x="Month", 
+            y="Total Active",
+            markers=True,
+            title=""
+        )
+        
+        # Ensure proper chronological order
+        line_fig.update_layout(
+            xaxis=dict(
+                categoryorder='array',
+                categoryarray=membership_df["Month"].tolist(),
+                title=""
+            ),
+            yaxis=dict(title="")
+        )
+        
+        # Display the line chart
+        st.plotly_chart(line_fig, use_container_width=True)
+    else:
+        st.info("No membership data available to display.")
 
 def show_plans_and_revenue(subs_df):
     """Show combined membership plan and revenue visualizations"""
@@ -265,17 +422,46 @@ def show_education_members(subs_df, active_count):
     st.subheader("Education Member Growth by Month")
     
     if month_display:
-        # Create bar chart data
+        # Create datetime values for sorting
+        month_dt_values = []
+        for month_name in month_display:
+            try:
+                # Parse month names like "Jan 2022"
+                month_dt = datetime.strptime(month_name, "%b %Y")
+                month_dt_values.append(month_dt)
+            except ValueError:
+                month_dt_values.append(None)
+        
+        # Create and sort data
         chart_data = pd.DataFrame({
             "Month": month_display,
+            "Month_dt": month_dt_values,
             "New Education Members": edu_by_month["count"].tolist()[:len(month_display)]
         })
         
-        # Set month as index
-        chart_data = chart_data.set_index("Month")
+        # Sort by date
+        chart_data = chart_data.sort_values("Month_dt").dropna(subset=["Month_dt"])
         
-        # Display bar chart
-        st.bar_chart(chart_data)
+        # Create Plotly bar chart with chronological ordering
+        fig = px.bar(
+            chart_data,
+            x="Month",
+            y="New Education Members",
+            title=""
+        )
+        
+        # Ensure proper chronological order
+        fig.update_layout(
+            xaxis=dict(
+                categoryorder='array',
+                categoryarray=chart_data["Month"].tolist(),
+                title=""
+            ),
+            yaxis=dict(title="")
+        )
+        
+        # Display the chart
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No monthly data available for education members.")
     
