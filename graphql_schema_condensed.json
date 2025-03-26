@@ -1,0 +1,405 @@
+{
+  "queryType": "Query",
+  "mutationType": "Mutation",
+  "subscriptionType": null,
+  "types": {
+    "Query": {
+      "fields": {
+        "activities": { "type": "ActivityConnection", "args": ["after", "before", "first", "last", "createdAt", "type"] },
+        "coupons": { "type": "CouponConnection", "args": ["after", "before", "first", "last"] },
+        "download": { "type": "Download", "args": ["id"] },
+        "downloads": { "type": "[Download]" },
+        "member": { "type": "Member", "args": ["id"] },
+        "memberByEmail": { "type": "Member", "args": ["email"] },
+        "members": { "type": "MemberConnection", "args": ["after", "before", "first", "last", "state", "createdAt", "sortBy"] },
+        "order": { "type": "Order", "args": ["uuid"] },
+        "orders": { "type": "OrderConnection", "args": ["after", "before", "first", "last", "state", "sortBy"] },
+        "plan": { "type": "Plan", "args": ["id"] },
+        "plans": { "type": "[Plan]" },
+        "subscription": { "type": "Subscription", "args": ["id"] }
+      }
+    },
+    "Mutation": {
+      "fields": {
+        "couponCreate": { 
+          "type": "CouponCreatePayload", 
+          "args": ["amountOffCents", "isPercentage", "code", "couponType", "maximumNumberOfRedemptions", "recurringLimit", "limitScope", "planIds"]
+        },
+        "createCoupons": { 
+          "type": "CreateCouponsPayload", 
+          "args": ["discountId", "coupons"]
+        },
+        "deleteCoupon": { 
+          "type": "DeleteCouponPayload", 
+          "args": ["code"]
+        },
+        "memberCreate": { 
+          "type": "MemberCreatePayload", 
+          "args": ["email", "fullName", "customField", "metadata", "password", "phoneNumber", "unrestrictedAccess", "username", "stripeCustomerId", "sendWelcomeEmail", "sendPasswordResetEmail"]
+        },
+        "memberDelete": { 
+          "type": "MemberDeletePayload", 
+          "args": ["id"]
+        },
+        "memberUpdate": { 
+          "type": "MemberUpdatePayload", 
+          "args": ["id", "address", "customField", "email", "fullName", "metadata", "password", "phoneNumber", "trackingParams", "unrestrictedAccess", "username"]
+        },
+        "subscriptionAddCoupon": { 
+          "type": "SubscriptionAddCouponPayload", 
+          "args": ["subscriptionId", "couponCode"]
+        },
+        "subscriptionChangeExpirationTime": { 
+          "type": "SubscriptionChangeExpirationTimePayload", 
+          "args": ["id", "expiresAt"]
+        },
+        "subscriptionCreate": { 
+          "type": "SubscriptionCreatePayload", 
+          "args": ["memberId", "planId", "chargeMember", "sendTeamManagerWelcomeEmail"]
+        },
+        "subscriptionDelete": { 
+          "type": "SubscriptionDeletePayload", 
+          "args": ["id"]
+        },
+        "subscriptionSetAutoRenew": { 
+          "type": "SubscriptionSetAutorenewPayload", 
+          "args": ["id", "autorenew"]
+        }
+      }
+    },
+    "Objects": {
+      "Activity": {
+        "fields": {
+          "createdAt": { "type": "Int!" },
+          "id": { "type": "ID!" },
+          "member": { "type": "Member" },
+          "subscription": { "type": "Subscription" },
+          "type": { "type": "ActivityType!" }
+        }
+      },
+      "ActivityConnection": {
+        "fields": {
+          "edges": { "type": "[ActivityEdge]" },
+          "nodes": { "type": "[Activity]" },
+          "pageInfo": { "type": "PageInfo!" }
+        }
+      },
+      "ActivityEdge": {
+        "fields": {
+          "cursor": { "type": "String!" },
+          "node": { "type": "Activity" }
+        }
+      },
+      "Address": {
+        "fields": {
+          "city": { "type": "String" },
+          "country": { "type": "String" },
+          "line2": { "type": "String" },
+          "postalCode": { "type": "String" },
+          "state": { "type": "String" },
+          "street": { "type": "String" }
+        }
+      },
+      "BulkCoupon": {
+        "fields": {
+          "code": { "type": "String!" }
+        }
+      },
+      "BulkError": {
+        "fields": {
+          "key": { "type": "String!" },
+          "messages": { "type": "[ErrorMessage!]!" }
+        }
+      },
+      "Coupon": {
+        "fields": {
+          "amountOffCents": { "type": "Int!" },
+          "code": { "type": "String!" },
+          "downloads": { "type": "[Download]" },
+          "id": { "type": "ID!" },
+          "isPercentage": { "type": "Boolean!" },
+          "maximumNumberOfRedemptions": { "type": "Int" },
+          "plans": { "type": "[Plan]" },
+          "recurringLimit": { "type": "Int" },
+          "state": { "type": "CouponState" },
+          "type": { "type": "CouponType" }
+        }
+      },
+      "CouponConnection": {
+        "fields": {
+          "edges": { "type": "[CouponEdge]" },
+          "nodes": { "type": "[Coupon]" },
+          "pageInfo": { "type": "PageInfo!" }
+        }
+      },
+      "CouponCreatePayload": {
+        "fields": {
+          "coupon": { "type": "Coupon!" }
+        }
+      },
+      "CouponEdge": {
+        "fields": {
+          "cursor": { "type": "String!" },
+          "node": { "type": "Coupon" }
+        }
+      },
+      "CreateCouponsPayload": {
+        "fields": {
+          "coupons": { "type": "[BulkCoupon!]!" },
+          "errors": { "type": "[BulkError!]!" }
+        }
+      },
+      "CreditCard": {
+        "fields": {
+          "brand": { "type": "String!" },
+          "expMonth": { "type": "Int!" },
+          "expYear": { "type": "Int!" },
+          "lastFourDigits": { "type": "String!" }
+        }
+      },
+      "DeleteCouponPayload": {
+        "fields": {
+          "code": { "type": "String!" },
+          "id": { "type": "ID!" }
+        }
+      },
+      "Download": {
+        "fields": {
+          "forSale": { "type": "Boolean!" },
+          "id": { "type": "ID!" },
+          "name": { "type": "String!" },
+          "priceCents": { "type": "Int!" },
+          "requireAddress": { "type": "Boolean!" },
+          "slug": { "type": "String!" },
+          "taxable": { "type": "Boolean!" }
+        }
+      },
+      "ErrorMessage": {
+        "fields": {
+          "attribute": { "type": "String!" },
+          "message": { "type": "String!" }
+        }
+      },
+      "Feed": {
+        "fields": {
+          "id": { "type": "ID!" },
+          "name": { "type": "String!" }
+        }
+      },
+      "FeedConnection": {
+        "fields": {
+          "edges": { "type": "[MemberFeedEdge]" },
+          "nodes": { "type": "[Feed]" },
+          "pageInfo": { "type": "PageInfo!" }
+        }
+      },
+      "Member": {
+        "fields": {
+          "address": { "type": "Address" },
+          "creditCard": { "type": "CreditCard" },
+          "customField": { "type": "String" },
+          "discordUserId": { "type": "String" },
+          "downloads": { "type": "[Download!]!" },
+          "email": { "type": "String!" },
+          "feeds": { "type": "FeedConnection!", "args": ["after", "before", "first", "last"] },
+          "fullName": { "type": "String!" },
+          "id": { "type": "ID!" },
+          "metadata": { "type": "Metadata" },
+          "orders": { "type": "[Order]" },
+          "phoneNumber": { "type": "String" },
+          "stripeCustomerId": { "type": "String" },
+          "subscriptions": { "type": "[Subscription!]!" },
+          "totalOrders": { "type": "Int!" },
+          "totalSpendCents": { "type": "Int!" },
+          "trackingParams": { "type": "JSON" },
+          "unrestrictedAccess": { "type": "Boolean!" },
+          "username": { "type": "String!" }
+        }
+      },
+      "MemberConnection": {
+        "fields": {
+          "edges": { "type": "[MemberEdge]" },
+          "nodes": { "type": "[Member]" },
+          "pageInfo": { "type": "PageInfo!" }
+        }
+      },
+      "MemberCreatePayload": {
+        "fields": {
+          "member": { "type": "Member!" }
+        }
+      },
+      "MemberDeletePayload": {
+        "fields": {
+          "id": { "type": "String!" }
+        }
+      },
+      "MemberEdge": {
+        "fields": {
+          "cursor": { "type": "String!" },
+          "node": { "type": "Member" }
+        }
+      },
+      "MemberFeedEdge": {
+        "fields": {
+          "cursor": { "type": "String!" },
+          "node": { "type": "Feed" },
+          "url": { "type": "String!" }
+        }
+      },
+      "MemberSubscriptionConnection": {
+        "fields": {
+          "edges": { "type": "[MemberSubscriptionEdge!]!" },
+          "nodes": { "type": "[Member!]!" },
+          "pageInfo": { "type": "PageInfo!" }
+        }
+      },
+      "MemberSubscriptionEdge": {
+        "fields": {
+          "cursor": { "type": "String!" },
+          "node": { "type": "Member" },
+          "role": { "type": "MemberSubscriptionRole" }
+        }
+      },
+      "MemberUpdatePayload": {
+        "fields": {
+          "member": { "type": "Member!" }
+        }
+      },
+      "Order": {
+        "fields": {
+          "coupon": { "type": "Coupon" },
+          "couponDiscountAmountCents": { "type": "Int" },
+          "createdAt": { "type": "Int" },
+          "currency": { "type": "String" },
+          "member": { "type": "Member" },
+          "purchasable": { "type": "OrderPurchasable" },
+          "purchasableType": { "type": "OrderPurchasableType" },
+          "status": { "type": "OrderStatus" },
+          "subscription": { "type": "Subscription" },
+          "taxAmountCents": { "type": "Int" },
+          "totalCents": { "type": "Int" },
+          "type": { "type": "OrderType" },
+          "uuid": { "type": "String!" }
+        }
+      },
+      "OrderConnection": {
+        "fields": {
+          "edges": { "type": "[OrderEdge]" },
+          "nodes": { "type": "[Order]" },
+          "pageInfo": { "type": "PageInfo!" }
+        }
+      },
+      "OrderEdge": {
+        "fields": {
+          "cursor": { "type": "String!" },
+          "node": { "type": "Order" }
+        }
+      },
+      "PageInfo": {
+        "fields": {
+          "endCursor": { "type": "String" },
+          "hasNextPage": { "type": "Boolean!" },
+          "hasPreviousPage": { "type": "Boolean!" },
+          "startCursor": { "type": "String" }
+        }
+      },
+      "Plan": {
+        "fields": {
+          "additionalMemberPriceCents": { "type": "Int" },
+          "afterCheckoutRedirectUrl": { "type": "String" },
+          "forSale": { "type": "Boolean!" },
+          "freeTrialType": { "type": "PlanFreeTrial!", "deprecated": true },
+          "id": { "type": "ID!" },
+          "includedMembers": { "type": "Int" },
+          "intervalCount": { "type": "Int" },
+          "intervalUnit": { "type": "PlanIntervalUnit" },
+          "name": { "type": "String!" },
+          "planGroup": { "type": "PlanGroup" },
+          "priceCents": { "type": "Int!" },
+          "renewalDay": { "type": "Int" },
+          "renewalMonth": { "type": "Int" },
+          "requireAddress": { "type": "Boolean!" },
+          "slug": { "type": "String!" },
+          "startingMonthForQuarterlyDateBasedPlans": { "type": "Int" },
+          "taxable": { "type": "Boolean!" },
+          "trialPriceCents": { "type": "Int" },
+          "trialType": { "type": "PlanTrial" },
+          "type": { "type": "PlanType!" }
+        }
+      },
+      "PlanGroup": {
+        "fields": {
+          "id": { "type": "ID!" },
+          "name": { "type": "String!" }
+        }
+      },
+      "Subscription": {
+        "fields": {
+          "active": { "type": "Boolean!" },
+          "autoRenew": { "type": "Boolean!" },
+          "coupon": { "type": "Coupon" },
+          "createdAt": { "type": "Int!" },
+          "discordUserId": { "type": "String" },
+          "expiresAt": { "type": "Int!" },
+          "id": { "type": "ID!" },
+          "isTeam": { "type": "Boolean!" },
+          "member": { "type": "Member" },
+          "members": { "type": "MemberSubscriptionConnection", "args": ["after", "before", "first", "last"] },
+          "plan": { "type": "Plan" },
+          "renewalAmount": { "type": "Int" },
+          "teamMembers": { "type": "Int" },
+          "totalTeamMembers": { "type": "Int" }
+        }
+      }
+    },
+    "Enums": {
+      "ActivityType": [
+        "new_order", "renewal", "order_refunded", "order_suspended", "renewal_payment_failed", 
+        "auto_renew_enabled", "auto_renew_disabled", "order_completed", "upgrade", 
+        "subscription_deleted", "member_deleted", "subscription_deactivated", "new_gift",
+        "gift_activated", "free_signup", "bulk_plan_move", "external_payment", 
+        "externally_paid_renewal", "new_team_member", "team_member_deleted"
+      ],
+      "CouponState": ["enabled", "disabled"],
+      "CouponType": ["one_time", "recurring", "limited"],
+      "MemberState": ["ACTIVE", "INACTIVE"],
+      "MemberSubscriptionRole": ["owner", "member", "payer"],
+      "OrderPurchasableType": ["Plan", "Download"],
+      "OrderStatus": ["suspended", "completed", "refunded"],
+      "OrderType": ["new_order", "renewal", "upgrade", "manual_charge", "additional_seats"],
+      "PlanFreeTrial": ["no_free_trial", "free_trial_with_card", "free_trial_without_card"],
+      "PlanIntervalUnit": ["month", "week", "year"],
+      "PlanTrial": ["card", "free", "paid"],
+      "PlanType": ["standard_plan", "fixed_plan", "lifetime_plan", "date_based_plan"]
+    },
+    "Unions": {
+      "OrderPurchasable": ["Download", "Plan"]
+    },
+    "InputObjects": {
+      "AddressInput": {
+        "fields": {
+          "city": { "type": "String" },
+          "country": { "type": "String" },
+          "postalCode": { "type": "String" },
+          "state": { "type": "String" },
+          "street": { "type": "String" },
+          "line2": { "type": "String" }
+        }
+      },
+      "CouponInput": {
+        "fields": {
+          "code": { "type": "String!" }
+        }
+      },
+      "CreatedAtFilter": {
+        "fields": {
+          "gt": { "type": "UnixTimestamp" },
+          "gte": { "type": "UnixTimestamp" },
+          "lt": { "type": "UnixTimestamp" },
+          "lte": { "type": "UnixTimestamp" }
+        }
+      }
+    },
+    "Scalars": ["Boolean", "ID", "Int", "JSON", "Metadata", "String", "UnixTimestamp"]
+  }
+}
