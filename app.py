@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import time
 import pandas as pd
 from datetime import datetime, timedelta
 import os
@@ -7,7 +8,7 @@ import plotly.express as px
 
 # App configuration
 st.set_page_config(
-    page_title="Maine Ad + Design Member Dashboard",
+    page_title="Maine Ad + Design membership dashboard",
     page_icon="🎨",
     layout="wide",
 )
@@ -75,25 +76,15 @@ def get_date_n_months_ago(n):
     return n_months_ago.strftime("%Y-%m-%d")
 
 # Sidebar for filters and options
-st.sidebar.title("Maine Ad + Design")
-st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
+st.sidebar.title("Maine Ad + Design membership dashboard")
+# st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
 
 # Debug mode toggle
 debug_mode = st.sidebar.checkbox("Debug Mode")
 
 # Add additional sidebar content
 st.sidebar.markdown("---")
-st.sidebar.markdown("### About")
-st.sidebar.markdown("""
-This dashboard connects to Memberful's API to provide insights about your organization's memberships.
-""")
-st.sidebar.markdown("**Made with ❤️ for Maine Ad + Design Board**")
-
-# Main content
-st.title("Maine Ad + Design Membership Dashboard")
-
-# Add date information
-st.caption(f"Data as of {datetime.now().strftime('%B %d, %Y')}")
+st.sidebar.caption("Made with ❤️ for Maine Ad + Design")
 
 # Loading indicator
 with st.spinner("Loading membership data..."):
@@ -119,6 +110,7 @@ with st.spinner("Loading membership data..."):
                         id
                         email
                         fullName
+                        totalSpendCents
                         subscriptions {{
                             id
                             active
@@ -127,6 +119,9 @@ with st.spinner("Loading membership data..."):
                             expiresAt
                             plan {{
                                 name
+                                priceCents
+                                intervalUnit
+                                intervalCount
                             }}
                         }}
                     }}
@@ -158,8 +153,14 @@ with st.spinner("Loading membership data..."):
     # Fetch all members with pagination
     progress_text = "Fetching member data (this may take a moment)..."
     progress_bar = st.progress(0, text=progress_text)
+    
+    for percent_complete in range(0, 100, 10):  # Simulate progress in increments
+        time.sleep(0.1)  # Simulate work being done
+        progress_bar.progress(percent_complete, text=progress_text)
+    
     members_data = fetch_all_members()
     progress_bar.progress(100, text="Data fetching complete!")
+    progress_bar.empty()  # Remove the progress bar when complete
     
     if debug_mode:
         st.expander("Members Data Sample").json(members_data[:5] if members_data else [])
@@ -169,7 +170,7 @@ with st.spinner("Loading membership data..."):
         st.stop()
     
     # Process data into a usable format
-    st.success(f"Successfully loaded data for {len(members_data)} members.")
+    st.toast(f"Successfully loaded data for {len(members_data)} members.", icon="🎉")
     
     # Create dataframes for analysis
     members_df = pd.DataFrame([
@@ -177,6 +178,7 @@ with st.spinner("Loading membership data..."):
             "id": member["id"],
             "email": member["email"],
             "name": member["fullName"],
+            "total_spend_cents": member.get("totalSpendCents", 0)
         }
         for member in members_data
     ])
@@ -197,6 +199,9 @@ with st.spinner("Loading membership data..."):
                 "active": sub.get("active", False),
                 "auto_renew": sub.get("autorenew", False),
                 "plan": sub.get("plan", {}).get("name", "Unknown"),
+                "price_cents": sub.get("plan", {}).get("priceCents", 0),
+                "interval_unit": sub.get("plan", {}).get("intervalUnit", ""),
+                "interval_count": sub.get("plan", {}).get("intervalCount", 1),
                 "created_at": sub.get("createdAt"),
                 "expires_at": sub.get("expiresAt")
             })
@@ -213,7 +218,20 @@ with st.spinner("Loading membership data..."):
 # Display membership metrics and visualizations
 if 'members_df' in locals() and not members_df.empty:
     # Summary metrics
+    st.subheader("Metrics")
     col1, col2, col3, col4 = st.columns(4)
+    
+    # Add value calculations for MRR
+    if not subs_df.empty:
+        # Add monthly value column
+        subs_df["monthly_value"] = subs_df.apply(
+            lambda x: x["price_cents"] / 
+                     (1 if x["interval_unit"] == "month" else
+                      0.25 if x["interval_unit"] == "week" else
+                      12 if x["interval_unit"] == "year" else 0) / 
+                     (x["interval_count"] or 1),
+            axis=1
+        )
     
     # Set standard time periods for analysis
     today = datetime.now()
@@ -234,52 +252,177 @@ if 'members_df' in locals() and not members_df.empty:
     yearly_growth = active_count - active_last_year
     col1.metric("Active Members", active_count, f"{yearly_growth:+d} from last year")
     
+    # Calculate MRR and paying members
+    if not subs_df.empty:
+        # For MRR calculation, we need to deduplicate subscriptions to handle group memberships
+        # Get the unique subscription IDs to avoid double-counting members of the same group
+        unique_subs = subs_df[subs_df["active"] == True].drop_duplicates("subscription_id")
+        current_mrr = unique_subs["monthly_value"].sum() / 100  # Convert cents to dollars
+        
+        # Count paying members (unique subscription IDs to avoid counting group members)
+        paying_members_count = len(unique_subs)
+        
+        # Calculate MRR from last month (30 days ago)
+        thirty_days_ago = today - timedelta(days=30)
+        active_month_ago = subs_df[
+            (subs_df["created_at"] <= thirty_days_ago) & 
+            ((subs_df["expires_at"] > thirty_days_ago) | (subs_df["expires_at"].isna()))
+        ].drop_duplicates("subscription_id")
+        
+        # Calculate MRR from those subscriptions
+        previous_mrr = active_month_ago["monthly_value"].sum() / 100 if not active_month_ago.empty else 0
+        
+        # Calculate month-over-month change
+        mrr_change = current_mrr - previous_mrr
+        mrr_change_percent = (mrr_change / previous_mrr * 100) if previous_mrr > 0 else 0
+        
+        col2.metric(
+            "Monthly Recurring Revenue", 
+            f"${current_mrr:,.2f}", 
+            f"{mrr_change_percent:+.1f}% from last month"
+        )
+        
+        # Display paying members count (vs total members)
+        col3.metric(
+            "Paying Members", 
+            paying_members_count,
+            f"of {active_count} total members"
+        )
+    else:
+        col2.metric("Monthly Recurring Revenue", "$0.00")
+        col3.metric("Paying Members", 0)
+    
     # New members in last 30 days
     new_subs_30d = subs_df[subs_df["created_at"] >= past_30_days] if not subs_df.empty else pd.DataFrame()
-    new_count_30d = len(new_subs_30d)
+    # Deduplicate subscriptions for consistent counting
+    unique_new_subs = new_subs_30d.drop_duplicates("subscription_id") if not new_subs_30d.empty else pd.DataFrame()
+    new_count_30d = len(unique_new_subs)
     
     # New members in the 30 days before that (for comparison)
     prev_30_days = past_30_days - timedelta(days=30)
-    new_prev_30d = len(subs_df[(subs_df["created_at"] >= prev_30_days) & 
-                             (subs_df["created_at"] < past_30_days)]) if not subs_df.empty else 0
+    prev_period_subs = subs_df[(subs_df["created_at"] >= prev_30_days) & 
+                             (subs_df["created_at"] < past_30_days)]
+    new_prev_30d = len(prev_period_subs.drop_duplicates("subscription_id")) if not prev_period_subs.empty else 0
     
     # Calculate monthly growth delta
     monthly_growth = new_count_30d - new_prev_30d
-    col2.metric("New Subscriptions (30d)", new_count_30d, f"{monthly_growth:+d} vs previous 30d")
+    col4.metric("New Subscriptions (30d)", new_count_30d, f"{monthly_growth:+d} vs previous 30d")
     
-    # Calculate unique member count
-    unique_members = len(subs_df["member_id"].unique()) if not subs_df.empty else 0
-    col3.metric("Total Members", unique_members)
-    
-    # Expiring soon (in next 30 days)
-    thirty_days = today + timedelta(days=30)
-    expiring_soon = subs_df[(subs_df["active"] == True) & 
-                           (subs_df["expires_at"] <= thirty_days) &
-                           (subs_df["expires_at"] >= today)] if not subs_df.empty else pd.DataFrame()
-    expiring_count = len(expiring_soon)
-    
-    # Auto-renew stats
-    auto_renew_off_count = len(subs_df[(subs_df["active"] == True) & 
-                                     (subs_df["auto_renew"] == False)]) if not subs_df.empty else 0
-    auto_renew_percent = int((1 - auto_renew_off_count / active_count) * 100) if active_count > 0 else 0
-    col4.metric("Expiring Soon", expiring_count, f"{auto_renew_percent}% have auto-renew on")
-    
+    # Skip expiring subscriptions section as requested
+
     # Visualizations
-    st.subheader("Membership Insights")
+    st.divider()
+    st.subheader("Visualizations")
     
     if not subs_df.empty:
         # Create tabs for different visualizations
-        viz_tabs = st.tabs(["New Subscriptions", "Membership Plan Distribution", "Renewal Status"])
+        viz_tabs = st.tabs(["Member Growth", "Membership Plan Distribution", "Revenue by Plan"])
         
         with viz_tabs[0]:
-            # New subscriptions by month
+            # Prepare data for growth chart
+            # Get new subscriptions by month
             subs_df["month"] = subs_df["created_at"].dt.to_period("M")
-            monthly_signups = subs_df.groupby(subs_df["month"]).size().reset_index(name="count")
-            monthly_signups["month"] = monthly_signups["month"].dt.to_timestamp()
             
-            fig = px.line(monthly_signups, x="month", y="count", 
-                         title="New Subscriptions by Month",
-                         labels={"month": "Month", "count": "New Subscriptions"})
+            # Filter to data only since July 2024
+            start_date = datetime(2024, 7, 1)
+            recent_subs = subs_df[subs_df["created_at"] >= start_date]
+            
+            # Get new by month
+            new_by_month = recent_subs.groupby(recent_subs["month"]).size().reset_index(name="new")
+            
+            # Get expired/canceled subscriptions by month
+            expired_subs = recent_subs[recent_subs["expires_at"].notna()]
+            expired_subs["end_month"] = expired_subs["expires_at"].dt.to_period("M")
+            churn_by_month = expired_subs.groupby(expired_subs["end_month"]).size().reset_index(name="churned")
+            
+            # Merge the data
+            growth_data = pd.merge(new_by_month, churn_by_month, left_on="month", right_on="end_month", how="outer").fillna(0)
+            
+            # Convert Period to string and create proper sort keys
+            growth_data["month_str"] = growth_data["month"].astype(str)
+            
+            # Extract year and month for proper sorting
+            # Use a safer approach that doesn't rely on date parsing
+            def extract_ym(period_str):
+                # Period strings are in format 'YYYY-MM'
+                if pd.isna(period_str) or not isinstance(period_str, str):
+                    return 0  # Default for NaN values
+                parts = period_str.split('-')
+                if len(parts) == 2:
+                    try:
+                        return int(parts[0]) * 100 + int(parts[1])  # YYYYMM as integer
+                    except (ValueError, IndexError):
+                        return 0
+                return 0
+                
+            growth_data["sort_key"] = growth_data["month_str"].apply(extract_ym)
+            growth_data = growth_data.sort_values("sort_key")
+            
+            # Calculate net change
+            growth_data["net"] = growth_data["new"] - growth_data["churned"]
+            
+            # Prepare data for plotting with formatted month names
+            plot_data = []
+            for _, row in growth_data.iterrows():
+                # Create nicely formatted month label (Jan 2023)
+                try:
+                    if isinstance(row["month"], pd.Period):
+                        month_name = row["month"].strftime("%b %Y")
+                    else:
+                        # Parse from string (YYYY-MM)
+                        parts = row["month_str"].split('-')
+                        if len(parts) == 2:
+                            year, month = int(parts[0]), int(parts[1])
+                            month_name = f"{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month-1]} {year}"
+                        else:
+                            month_name = row["month_str"]
+                except:
+                    # Fallback if formatting fails
+                    month_name = str(row["month_str"])
+                
+                plot_data.append({"month": month_name, "sort_key": row["sort_key"], "type": "New", "count": row["new"]})
+                plot_data.append({"month": month_name, "sort_key": row["sort_key"], "type": "Churned", "count": -row["churned"]})
+                plot_data.append({"month": month_name, "sort_key": row["sort_key"], "type": "Net", "count": row["net"]})
+            
+            plot_df = pd.DataFrame(plot_data)
+            
+            # Sort the data
+            plot_df = plot_df.sort_values("sort_key")
+            
+            # Get sorted month names for category ordering
+            month_order = plot_df["month"].unique()
+            
+            # Create the bar chart
+            fig = px.bar(
+                plot_df, 
+                x="month", 
+                y="count", 
+                color="type",
+                barmode="group",
+                color_discrete_map={"New": "#4CAF50", "Churned": "#FF5252", "Net": "#2196F3"},
+                title="Member Growth by Month",
+                labels={"month": "Month", "count": "Members", "type": ""},
+                category_orders={"month": month_order}
+            )
+            
+            # Add a horizontal line at y=0
+            fig.add_shape(
+                type="line",
+                x0=0,
+                y0=0,
+                x1=1,
+                y1=0,
+                line=dict(color="black", width=1, dash="dash"),
+                xref="paper",
+                yref="y"
+            )
+            
+            # Adjust layout for better readability
+            fig.update_layout(
+                xaxis_tickangle=-45,
+                margin=dict(b=70)
+            )
+            
             st.plotly_chart(fig, use_container_width=True)
         
         with viz_tabs[1]:
@@ -293,20 +436,62 @@ if 'members_df' in locals() and not members_df.empty:
                 st.info("No active membership data available for plan distribution.")
         
         with viz_tabs[2]:
-            # Auto-renew status for active memberships
-            auto_renew_counts = subs_df[subs_df["active"] == True].groupby("auto_renew").size().reset_index(name="count")
-            if not auto_renew_counts.empty:
-                auto_renew_counts["status"] = auto_renew_counts["auto_renew"].map({True: "Auto-renew ON", False: "Auto-renew OFF"})
-                fig = px.pie(auto_renew_counts, values="count", names="status", 
-                            title="Auto-Renewal Status for Active Memberships",
-                            color_discrete_sequence=["#4CAF50", "#FF5252"])
+            # Revenue by plan
+            if not subs_df.empty:
+                # Get unique subscriptions to avoid double-counting group members
+                unique_active_subs = subs_df[subs_df["active"] == True].drop_duplicates("subscription_id")
+                
+                # Group plans by monthly revenue
+                plan_revenue = unique_active_subs.groupby("plan").agg({
+                    "monthly_value": "sum",
+                    "member_id": "nunique"
+                }).reset_index()
+                
+                plan_revenue["monthly_revenue"] = plan_revenue["monthly_value"] / 100  # Convert to dollars
+                plan_revenue.rename(columns={"member_id": "members"}, inplace=True)
+                plan_revenue = plan_revenue.sort_values("monthly_revenue", ascending=False)
+                
+                # Create the bar chart
+                fig = px.bar(
+                    plan_revenue, 
+                    x="plan", 
+                    y="monthly_revenue",
+                    title="Monthly Revenue by Plan",
+                    labels={"plan": "Plan", "monthly_revenue": "Monthly Revenue ($)"}
+                )
+                
+                # Format the labels properly
+                # fig.update_traces(
+                #     texttemplate='${:.2f}', 
+                #     textposition='outside',
+                #     textfont_size=12,
+                #     text=plan_revenue["monthly_revenue"]
+                # )
+                
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add a table with more detailed information
+                st.subheader("Plan Revenue Details")
+                detail_table = plan_revenue[["plan", "members", "monthly_revenue"]].copy()
+                # Avoid division by zero
+                detail_table["avg_per_member"] = detail_table.apply(
+                    lambda x: x["monthly_revenue"] / x["members"] if x["members"] > 0 else 0, 
+                    axis=1
+                )
+                detail_table["monthly_revenue"] = detail_table["monthly_revenue"].map("${:.2f}".format)
+                detail_table["avg_per_member"] = detail_table["avg_per_member"].map("${:.2f}".format)
+                detail_table.columns = ["Plan", "Members", "Monthly Revenue", "Avg Revenue per Member"]
+                
+                st.dataframe(detail_table)
             else:
-                st.info("No active membership data available for renewal status.")
+                st.info("No active membership data available for revenue analysis.")
+        
+        # Renewal Status tab removed as requested
     
     # Member details
-    st.subheader("Member Details")
-    tabs = st.tabs(["All Members", "New Subscriptions (30d)", "New Subscriptions (90d)", "Auto-Renew Off", "Expiring Soon"])
+    st.divider()
+    st.subheader("Member details")
+    tabs = st.tabs(["All Members", "New Subscriptions (30d)", "New Subscriptions (90d)"])
     
     # Helper function to create a download button for dataframes
     def create_download_button(df, filename, button_text="Download as CSV"):
@@ -320,45 +505,85 @@ if 'members_df' in locals() and not members_df.empty:
     
     with tabs[0]:
         if not subs_df.empty:
-            all_members = pd.merge(members_df, subs_df[["member_id", "active", "plan"]], 
+            # Create a unique list of members with their subscription info
+            # Get latest subscription for each member to show current status
+            member_subs = subs_df.sort_values("created_at", ascending=False).drop_duplicates("member_id")
+            all_members = pd.merge(members_df, member_subs[["member_id", "active", "plan", "subscription_id"]], 
                                   left_on="id", right_on="member_id", how="left")
+            
+            # Add filters
+            st.write("Filter members:")
+            col1, col2 = st.columns(2)
+            
+            # Active members filter
+            show_active_only = col1.checkbox("Show active members only", value=False)
+            
+            # Plan filter
+            available_plans = subs_df["plan"].unique().tolist()
+            selected_plans = col2.multiselect("Filter by plan", options=available_plans)
+            
+            # Apply filters
+            filtered_members = all_members
+            if show_active_only:
+                filtered_members = filtered_members[filtered_members["active"] == True]
+            
+            if selected_plans:
+                filtered_members = filtered_members[filtered_members["plan"].isin(selected_plans)]
+            
+            # Display the filtered table
             display_cols = ["name", "email", "plan", "active"]
-            st.dataframe(all_members[display_cols])
-            create_download_button(all_members[display_cols], "made_all_members.csv")
+            st.dataframe(
+                filtered_members[display_cols],
+                column_config={
+                    "name": "Member Name",
+                    "email": "Email",
+                    "plan": "Membership Plan",
+                    "active": st.column_config.CheckboxColumn("Active")
+                },
+                hide_index=True
+            )
+            create_download_button(filtered_members[display_cols], "made_members.csv")
     
     with tabs[1]:
         if not new_subs_30d.empty:
+            # Get unique new subscriptions
+            unique_new_30d = new_subs_30d.drop_duplicates("subscription_id")
             display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
-            st.dataframe(new_subs_30d[display_cols])
-            create_download_button(new_subs_30d[display_cols], "made_new_members_30d.csv")
+            st.dataframe(
+                unique_new_30d[display_cols],
+                column_config={
+                    "member_name": "Member Name",
+                    "member_email": "Email",
+                    "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
+                    "plan": "Membership Plan",
+                    "active": st.column_config.CheckboxColumn("Active")
+                },
+                hide_index=True
+            )
+            create_download_button(unique_new_30d[display_cols], "made_new_members_30d.csv")
         else:
             st.info("No new subscriptions in the past 30 days.")
             
     with tabs[2]:
         new_subs_90d = subs_df[subs_df["created_at"] >= past_90_days] if not subs_df.empty else pd.DataFrame()
         if not new_subs_90d.empty:
+            # Get unique new subscriptions
+            unique_new_90d = new_subs_90d.drop_duplicates("subscription_id")
             display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
-            st.dataframe(new_subs_90d[display_cols])
-            create_download_button(new_subs_90d[display_cols], "made_new_members_90d.csv")
+            st.dataframe(
+                unique_new_90d[display_cols],
+                column_config={
+                    "member_name": "Member Name",
+                    "member_email": "Email",
+                    "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
+                    "plan": "Membership Plan",
+                    "active": st.column_config.CheckboxColumn("Active")
+                },
+                hide_index=True
+            )
+            create_download_button(unique_new_90d[display_cols], "made_new_members_90d.csv")
         else:
             st.info("No new subscriptions in the past 90 days.")
-    
-    with tabs[3]:
-        auto_renew_off = subs_df[(subs_df["active"] == True) & (subs_df["auto_renew"] == False)] if not subs_df.empty else pd.DataFrame()
-        if not auto_renew_off.empty:
-            display_cols = ["member_name", "member_email", "expires_at", "plan"]
-            st.dataframe(auto_renew_off[display_cols])
-            create_download_button(auto_renew_off[display_cols], "made_auto_renew_off.csv")
-        else:
-            st.info("No members with auto-renew disabled.")
-    
-    with tabs[4]:
-        if not expiring_soon.empty:
-            display_cols = ["member_name", "member_email", "expires_at", "plan"]
-            st.dataframe(expiring_soon[display_cols])
-            create_download_button(expiring_soon[display_cols], "made_expiring_soon.csv")
-        else:
-            st.info("No memberships expiring in the next 30 days.")
 else:
     st.warning("No member data available. Please check your API connection.")
 
