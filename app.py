@@ -23,7 +23,7 @@ st.sidebar.title("Maine Ad + Design membership dashboard")
 # st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
 
 # Debug mode toggle
-debug_mode = st.sidebar.checkbox("Debug Mode")
+debug_mode = st.sidebar.checkbox("Debug mode")
 
 # Add additional sidebar content
 st.sidebar.markdown("---")
@@ -71,7 +71,7 @@ if "education_feature_added" not in st.session_state:
     # Also clear all_members_cache to ensure it has the education flag
     if "all_members_cache" in st.session_state:
         del st.session_state.all_members_cache
-    st.toast("Adding education member support. Refreshing data...", icon="🔄")
+    # st.toast("Adding education member support. Refreshing data...", icon="🔄")
 
 # Check if data is already in session state
 if "members_data" not in st.session_state or refresh_data:
