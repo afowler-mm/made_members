@@ -78,13 +78,16 @@ def get_date_n_months_ago(n):
 st.sidebar.title("Maine Ad + Design")
 st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
 
-time_period = st.sidebar.selectbox(
-    "Time period for analysis:",
-    ["Past month", "Past 3 months", "Past 6 months", "Past year", "All time"]
-)
-
 # Debug mode toggle
 debug_mode = st.sidebar.checkbox("Debug Mode")
+
+# Add additional sidebar content
+st.sidebar.markdown("---")
+st.sidebar.markdown("### About")
+st.sidebar.markdown("""
+This dashboard connects to Memberful's API to provide insights about your organization's memberships.
+""")
+st.sidebar.markdown("**Made with ❤️ for Maine Ad + Design Board**")
 
 # Main content
 st.title("Maine Ad + Design Membership Dashboard")
@@ -212,37 +215,54 @@ if 'members_df' in locals() and not members_df.empty:
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     
-    # Get date filters based on selection
-    if time_period == "Past month":
-        filter_date = datetime.now() - timedelta(days=30)
-    elif time_period == "Past 3 months":
-        filter_date = datetime.now() - timedelta(days=90)
-    elif time_period == "Past 6 months":
-        filter_date = datetime.now() - timedelta(days=180)
-    elif time_period == "Past year":
-        filter_date = datetime.now() - timedelta(days=365)
-    else:  # All time
-        filter_date = datetime.min
+    # Set standard time periods for analysis
+    today = datetime.now()
+    past_30_days = today - timedelta(days=30)
+    past_90_days = today - timedelta(days=90)
+    past_year = today - timedelta(days=365)
     
     # Total active members
     active_subs = subs_df[subs_df["active"] == True] if not subs_df.empty else pd.DataFrame()
-    col1.metric("Active Members", len(active_subs))
+    active_count = len(active_subs)
     
-    # New members in selected period
-    new_subs = subs_df[subs_df["created_at"] >= filter_date] if not subs_df.empty else pd.DataFrame()
-    col2.metric("New Subscriptions", len(new_subs))
+    # Active members last year (for comparison)
+    one_year_ago = today - timedelta(days=365)
+    active_last_year = len(subs_df[(subs_df["active"] == True) & 
+                                 (subs_df["created_at"] <= one_year_ago)]) if not subs_df.empty else 0
+    
+    # Calculate yearly growth percentage
+    yearly_growth = active_count - active_last_year
+    col1.metric("Active Members", active_count, f"{yearly_growth:+d} from last year")
+    
+    # New members in last 30 days
+    new_subs_30d = subs_df[subs_df["created_at"] >= past_30_days] if not subs_df.empty else pd.DataFrame()
+    new_count_30d = len(new_subs_30d)
+    
+    # New members in the 30 days before that (for comparison)
+    prev_30_days = past_30_days - timedelta(days=30)
+    new_prev_30d = len(subs_df[(subs_df["created_at"] >= prev_30_days) & 
+                             (subs_df["created_at"] < past_30_days)]) if not subs_df.empty else 0
+    
+    # Calculate monthly growth delta
+    monthly_growth = new_count_30d - new_prev_30d
+    col2.metric("New Subscriptions (30d)", new_count_30d, f"{monthly_growth:+d} vs previous 30d")
     
     # Calculate unique member count
     unique_members = len(subs_df["member_id"].unique()) if not subs_df.empty else 0
     col3.metric("Total Members", unique_members)
     
     # Expiring soon (in next 30 days)
-    today = datetime.now()
     thirty_days = today + timedelta(days=30)
     expiring_soon = subs_df[(subs_df["active"] == True) & 
                            (subs_df["expires_at"] <= thirty_days) &
                            (subs_df["expires_at"] >= today)] if not subs_df.empty else pd.DataFrame()
-    col4.metric("Expiring Soon", len(expiring_soon))
+    expiring_count = len(expiring_soon)
+    
+    # Auto-renew stats
+    auto_renew_off_count = len(subs_df[(subs_df["active"] == True) & 
+                                     (subs_df["auto_renew"] == False)]) if not subs_df.empty else 0
+    auto_renew_percent = int((1 - auto_renew_off_count / active_count) * 100) if active_count > 0 else 0
+    col4.metric("Expiring Soon", expiring_count, f"{auto_renew_percent}% have auto-renew on")
     
     # Visualizations
     st.subheader("Membership Insights")
@@ -286,7 +306,7 @@ if 'members_df' in locals() and not members_df.empty:
     
     # Member details
     st.subheader("Member Details")
-    tabs = st.tabs(["All Members", "New Subscriptions", "Auto-Renew Off", "Expiring Soon"])
+    tabs = st.tabs(["All Members", "New Subscriptions (30d)", "New Subscriptions (90d)", "Auto-Renew Off", "Expiring Soon"])
     
     # Helper function to create a download button for dataframes
     def create_download_button(df, filename, button_text="Download as CSV"):
@@ -307,14 +327,23 @@ if 'members_df' in locals() and not members_df.empty:
             create_download_button(all_members[display_cols], "made_all_members.csv")
     
     with tabs[1]:
-        if not new_subs.empty:
+        if not new_subs_30d.empty:
             display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
-            st.dataframe(new_subs[display_cols])
-            create_download_button(new_subs[display_cols], "made_new_members.csv")
+            st.dataframe(new_subs_30d[display_cols])
+            create_download_button(new_subs_30d[display_cols], "made_new_members_30d.csv")
         else:
-            st.info(f"No new subscriptions in the {time_period.lower()}.")
-    
+            st.info("No new subscriptions in the past 30 days.")
+            
     with tabs[2]:
+        new_subs_90d = subs_df[subs_df["created_at"] >= past_90_days] if not subs_df.empty else pd.DataFrame()
+        if not new_subs_90d.empty:
+            display_cols = ["member_name", "member_email", "created_at", "plan", "active"]
+            st.dataframe(new_subs_90d[display_cols])
+            create_download_button(new_subs_90d[display_cols], "made_new_members_90d.csv")
+        else:
+            st.info("No new subscriptions in the past 90 days.")
+    
+    with tabs[3]:
         auto_renew_off = subs_df[(subs_df["active"] == True) & (subs_df["auto_renew"] == False)] if not subs_df.empty else pd.DataFrame()
         if not auto_renew_off.empty:
             display_cols = ["member_name", "member_email", "expires_at", "plan"]
@@ -323,7 +352,7 @@ if 'members_df' in locals() and not members_df.empty:
         else:
             st.info("No members with auto-renew disabled.")
     
-    with tabs[3]:
+    with tabs[4]:
         if not expiring_soon.empty:
             display_cols = ["member_name", "member_email", "expires_at", "plan"]
             st.dataframe(expiring_soon[display_cols])
