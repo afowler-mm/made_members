@@ -398,16 +398,21 @@ if 'members_df' in locals() and not members_df.empty:
             def extract_ym(period_str):
                 # Period strings are in format 'YYYY-MM'
                 if pd.isna(period_str) or not isinstance(period_str, str):
-                    return 0  # Default for NaN values
+                    return None  # Mark invalid values as None so we can filter them out
                 parts = period_str.split('-')
                 if len(parts) == 2:
                     try:
                         return int(parts[0]) * 100 + int(parts[1])  # YYYYMM as integer
                     except (ValueError, IndexError):
-                        return 0
-                return 0
+                        return None
+                return None
                 
             growth_data["sort_key"] = growth_data["month_str"].apply(extract_ym)
+            
+            # Filter out rows with invalid sort keys (None values)
+            growth_data = growth_data[growth_data["sort_key"].notna()]
+            
+            # Now sort the valid data
             growth_data = growth_data.sort_values("sort_key")
             
             # Calculate net change
@@ -416,6 +421,10 @@ if 'members_df' in locals() and not members_df.empty:
             # Prepare data for plotting with formatted month names
             plot_data = []
             for _, row in growth_data.iterrows():
+                # Skip rows with zero sort key (these are invalid/placeholder entries)
+                if row["sort_key"] == 0:
+                    continue
+                    
                 # Create nicely formatted month label (Jan 2023)
                 try:
                     if isinstance(row["month"], pd.Period):
@@ -427,16 +436,21 @@ if 'members_df' in locals() and not members_df.empty:
                             year, month = int(parts[0]), int(parts[1])
                             month_name = f"{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month-1]} {year}"
                         else:
-                            month_name = row["month_str"]
-                except:
-                    # Fallback if formatting fails
-                    month_name = str(row["month_str"])
+                            # Skip invalid month strings
+                            continue
+                except Exception:
+                    # Skip entries that can't be properly formatted
+                    continue
                 
+                # Add valid data points to the plot data
                 plot_data.append({"month": month_name, "sort_key": row["sort_key"], "type": "New", "count": row["new"]})
                 plot_data.append({"month": month_name, "sort_key": row["sort_key"], "type": "Churned", "count": -row["churned"]})
                 plot_data.append({"month": month_name, "sort_key": row["sort_key"], "type": "Net", "count": row["net"]})
             
             plot_df = pd.DataFrame(plot_data)
+            
+            # Filter out any entries with blank or invalid month names
+            plot_df = plot_df[plot_df["month"].notna() & (plot_df["month"] != "") & (plot_df["month"] != "0")]
             
             # Sort the data
             plot_df = plot_df.sort_values("sort_key")
