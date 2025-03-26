@@ -146,8 +146,10 @@ if 'members_df' in locals() and not members_df.empty:
                              (subs_df["created_at"] <= one_year_ago)]) if not subs_df.empty else 0
     
     # Calculate yearly growth percentage
-    yearly_growth = active_count - active_last_year
-    col1.metric("Active Members", active_count, f"{yearly_growth:+d} from last year")
+    # yearly_growth = active_count - active_last_year
+    # This will be useful once we have a full year of data
+    # col1.metric("Active Members", active_count, f"{yearly_growth:+d} from last year")
+    col1.metric("Active members", active_count)
     
     # Display MRR
     if not subs_df.empty:
@@ -174,7 +176,7 @@ if 'members_df' in locals() and not members_df.empty:
         mrr_change_percent = (mrr_change / previous_mrr * 100) if previous_mrr > 0 else 0
         
         col2.metric(
-            "Monthly Recurring Revenue", 
+            "Monthly recurring revenue", 
             f"${current_mrr:,.2f}", 
             f"{mrr_change_percent:+.1f}% from last month"
         )
@@ -182,7 +184,7 @@ if 'members_df' in locals() and not members_df.empty:
         # Display paying members count (vs total members)
         non_education_count = active_count - education_count
         col3.metric(
-            "Paying Members", 
+            "Paying members", 
             paying_members_count,
             f"of {non_education_count} non-education members"
         )
@@ -202,11 +204,11 @@ if 'members_df' in locals() and not members_df.empty:
     
     # Calculate monthly growth delta
     monthly_growth = new_count_30d - new_prev_30d
-    col4.metric("New Subscriptions (30d)", new_count_30d, f"{monthly_growth:+d} vs previous 30d")
+    col4.metric("New subscriptions, last 30 days", new_count_30d, f"{monthly_growth:+d} vs previous 30 days")
     
     # Education members count
     education_percentage = (education_count / active_count * 100) if active_count > 0 else 0
-    col5.metric("Education Members", education_count, f"{education_percentage:.1f}% of active members")
+    col5.metric("Education members", education_count, f"{education_percentage:.1f}% of active members")
     
     # Main Dashboard Tabs
     st.divider()

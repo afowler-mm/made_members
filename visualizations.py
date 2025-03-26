@@ -14,7 +14,7 @@ def show_member_growth(subs_df):
         return
     
     # PART 1: Subscription Changes by Month (New/Canceled/Net)
-    st.subheader("Subscription Changes by Month")
+    st.subheader("Membership growth by month")
     
     # Get new subscriptions by month
     subs_df["month"] = subs_df["created_at"].dt.to_period("M")
@@ -124,7 +124,7 @@ def show_member_growth(subs_df):
     st.plotly_chart(fig, use_container_width=True)
     
     # PART 2: Total Membership Over Time
-    st.subheader("Total Membership by Month")
+    st.subheader("Total membership by month")
     
     # Calculate the current active member count
     active_members = subs_df[subs_df["active"] == True]
@@ -255,7 +255,7 @@ def show_plans_and_revenue(subs_df):
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Active Membership by Plan Type")
+        st.subheader("Active membership by plan")
         # Membership plan distribution
         plan_counts = subs_df[subs_df["active"] == True].groupby("plan").size().reset_index(name="count")
         if not plan_counts.empty:
@@ -289,7 +289,7 @@ def show_plans_and_revenue(subs_df):
             st.info("No active membership data available for plan distribution.")
     
     with col2:
-        st.subheader("Monthly Revenue by Plan")
+        st.subheader("Monthly revenue by plan")
         if not subs_df.empty:
             # Get unique subscriptions to avoid double-counting group members
             unique_active_subs = subs_df[subs_df["active"] == True].drop_duplicates("subscription_id")
@@ -331,7 +331,7 @@ def show_plans_and_revenue(subs_df):
             st.plotly_chart(fig, use_container_width=True)
             
             # Add a table with more detailed information
-            st.subheader("Plan Revenue Details")
+            st.subheader("Plan revenue details")
             detail_table = plan_revenue[["plan", "members", "monthly_revenue"]].copy()
             # Avoid division by zero
             detail_table["avg_per_member"] = detail_table.apply(
@@ -369,7 +369,7 @@ def show_education_members(subs_df, active_count):
     non_edu_percent = round((non_education_count / total * 100), 1)
     
     # Create pie chart data
-    st.subheader("Education vs Standard Members")
+    st.subheader("Education members vs all others")
     pie_data = {
         f"Education Members ({edu_percent}%)": education_count,
         f"Standard Members ({non_edu_percent}%)": non_education_count
@@ -419,7 +419,7 @@ def show_education_members(subs_df, active_count):
             continue
     
     # Create a bar chart for education member growth by month
-    st.subheader("Education Member Growth by Month")
+    st.subheader("Education member growth by month")
     
     if month_display:
         # Create datetime values for sorting
@@ -466,7 +466,7 @@ def show_education_members(subs_df, active_count):
         st.info("No monthly data available for education members.")
     
     # Display education members table
-    st.subheader("Education Members Details")
+    st.subheader("Education members details")
     edu_display = education_members.drop_duplicates("member_id")[
         ["member_name", "member_email", "plan", "created_at"]
     ]
@@ -481,5 +481,3 @@ def show_education_members(subs_df, active_count):
         },
         hide_index=True
     )
-    
-    create_download_button(edu_display, "made_education_members.csv", "Download Education Members")
