@@ -97,42 +97,35 @@ def display_membership_metrics(subs_df):
         
         # Display metrics with month-over-month changes
         col1.metric(
-            "Individual members 👩‍🎨", 
+            "Individual members", 
             individual_count,
             f"{individual_change:+d} from last month"
         )
         
         col2.metric(
-            "Small business 🏢", 
-            f"{small_business_accounts}🏢 ({small_business_count}👥)",
+            "Small business memberships", 
+            f"{small_business_accounts} ({small_business_count}👥)",
             f"{small_business_accounts_change:+d} from last month"
         )
         
         col3.metric(
-            "Large business 🏙️", 
-            f"{large_business_accounts}🏙️ ({large_business_count}👥)",
+            "Large business memberships", 
+            f"{large_business_accounts} ({large_business_count}👥)",
             f"{large_business_accounts_change:+d} from last month"
         )
         
         col4.metric(
-            "Education 🎓", 
-            f"{education_count}🎓",
+            "Education members", 
+            f"{education_count}",
             f"{education_change:+d} from last month"
         )
         
         col5.metric(
-            "Monthly revenue 💰", 
+            "Monthly revenue", 
             f"${current_mrr:,.2f}", 
             f"{mrr_change_percent:+.1f}% from last month"
         )
-    else:
-        # Display placeholders if no data
-        col1.metric("Individual members 👩‍🎨", 0)
-        col2.metric("Small business 🏢", "0🏢 (0👥)")
-        col3.metric("Large business 🏙️", "0🏙️ (0👥)")
-        col4.metric("Education 🎓", "0🎓")
-        col5.metric("Monthly revenue 💰", "$0.00")
-    
+
     return active_count
 
 # App configuration
@@ -143,8 +136,7 @@ st.set_page_config(
 )
 
 # Sidebar for filters and options
-st.sidebar.title("Maine Ad + Design membership dashboard")
-# st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
+st.title("Maine Ad + Design membership dashboard")
 
 # Debug mode toggle
 debug_mode = st.sidebar.checkbox("Debug mode")
@@ -308,33 +300,8 @@ if 'members_df' in locals() and not members_df.empty:
                 # Also cache available plans
                 st.session_state.available_plans = subs_df["plan"].unique().tolist()
                 
-                # Initialize filter states
-                if "show_active_only" not in st.session_state:
-                    st.session_state.show_active_only = False
-                if "selected_plans" not in st.session_state:
-                    st.session_state.selected_plans = []
-                if "show_education_only" not in st.session_state:
-                    st.session_state.show_education_only = False
-                
-                
             # Simplified consolidated member directory
             if not subs_df.empty:
-                # Add filters using session state to avoid reloads
-                col1, col2 = st.columns(2)
-                
-                # Active members filter with on_change callback
-                show_active_only = col1.checkbox(
-                    "Show active members only", 
-                    value=st.session_state.get("show_active_only", True),
-                    key="show_active_only"
-                    )
-                
-                # Education members filter with on_change callback
-                show_education_only = col2.checkbox(
-                    "Show education members only",
-                    value=st.session_state.get("show_education_only", False),
-                    key="show_education_only"
-                    )
                 
                 # Get member subscription data with join dates
                 # Get all subscriptions to show each member's join date
@@ -351,26 +318,6 @@ if 'members_df' in locals() and not members_df.empty:
                 
                 # Apply filters to the cached data (client-side filtering)
                 filtered_members = consolidated_members.copy()
-                
-                # Filter active members if requested
-                if show_active_only:
-                    filtered_members = filtered_members[filtered_members["active"] == True]
-                
-                # Filter education members if requested
-                if show_education_only and "is_education" in filtered_members.columns:
-                    # Add debugging info
-                    if debug_mode:
-                        st.write(f"Before filtering: {len(filtered_members)} members")
-                        education_count = filtered_members["is_education"].sum()
-                        st.write(f"Found {education_count} education members in the dataset")
-                        # Show the first few education members
-                        st.write("Education members:", filtered_members[filtered_members["is_education"] == True].head(3))
-                    
-                    # Apply the filter - convert to string then boolean to ensure proper comparison
-                    filtered_members = filtered_members[filtered_members["is_education"] == True]
-                    
-                    if debug_mode:
-                        st.write(f"After filtering: {len(filtered_members)} members")
                 
                 # Create a column for the Memberful profile URL
                 filtered_members["memberful_url"] = filtered_members["member_id"].apply(

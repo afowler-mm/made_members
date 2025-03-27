@@ -1024,26 +1024,3 @@ def show_education_members(subs_df, active_count):
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No monthly data available for education members.")
-    
-    # Display education members table
-    st.subheader("Education members details")
-    edu_display = education_members.drop_duplicates("member_id")
-    
-    # Create a column for the Memberful profile URL
-    edu_display["memberful_url"] = edu_display["member_id"].apply(
-        lambda id: f"https://made.memberful.com/admin/members/{id}"
-    )
-    
-    st.dataframe(
-        edu_display[[
-            "member_name", "member_email", "plan", "created_at", "memberful_url"
-        ]],
-        column_config={
-            "member_name": "Member Name",
-            "member_email": "Email",
-            "plan": "Membership Plan",
-            "created_at": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-            "memberful_url": st.column_config.LinkColumn("Memberful Profile")
-        },
-        hide_index=True
-    )
