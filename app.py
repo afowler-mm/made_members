@@ -249,9 +249,7 @@ if 'members_df' in locals() and not members_df.empty:
     # Store education count in session state for later use
     st.session_state.education_count = education_count
     
-    # Main Dashboard Tabs
-    st.divider()
-    
+    # Main Dashboard Tabs    
     # Create main tabs for the dashboard
     if "is_education" in subs_df.columns:
         main_tabs = st.tabs(["Member Growth", "Plans and Revenue", "Education Members", "Member Directory"])
@@ -261,7 +259,6 @@ if 'members_df' in locals() and not members_df.empty:
     if not subs_df.empty:
         # Member Growth visualization
         with main_tabs[0]:
-            st.subheader("Current Membership")
             display_membership_metrics(subs_df)
             st.divider()
             show_member_growth(subs_df)
@@ -353,14 +350,14 @@ if 'members_df' in locals() and not members_df.empty:
                     if debug_mode:
                         st.write(f"After filtering: {len(filtered_members)} members")
                 
-                # Add a Memberful admin link column
-                filtered_members["admin_link"] = filtered_members["member_id"].apply(
+                # Create a column for the Memberful profile URL
+                filtered_members["memberful_url"] = filtered_members["member_id"].apply(
                     lambda id: f"https://made.memberful.com/admin/members/{id}"
                 )
                 
                 # Set up display columns with join date
                 if "is_education" in filtered_members.columns:
-                    display_cols = ["name", "email", "joined_date", "plan", "active", "is_education", "admin_link"]
+                    display_cols = ["name", "email", "joined_date", "plan", "active", "is_education", "memberful_url"]
                     column_config = {
                         "name": "Member Name",
                         "email": "Email",
@@ -368,28 +365,27 @@ if 'members_df' in locals() and not members_df.empty:
                         "plan": "Membership Plan",
                         "active": st.column_config.CheckboxColumn("Active"),
                         "is_education": st.column_config.CheckboxColumn("Education Member"),
-                        "admin_link": st.column_config.LinkColumn("Memberful Admin")
+                        "memberful_url": st.column_config.LinkColumn("Memberful Profile")
                     }
                 else:
-                    display_cols = ["name", "email", "joined_date", "plan", "active", "admin_link"]
+                    display_cols = ["name", "email", "joined_date", "plan", "active", "memberful_url"]
                     column_config = {
                         "name": "Member Name",
                         "email": "Email", 
                         "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
                         "plan": "Membership Plan",
                         "active": st.column_config.CheckboxColumn("Active"),
-                        "admin_link": st.column_config.LinkColumn("Memberful Admin")
+                        "memberful_url": st.column_config.LinkColumn("Memberful Profile")
                     }
                 
                 # Display the complete member table with sorting capability
                 st.dataframe(
                     filtered_members[display_cols].sort_values("joined_date", ascending=False),
                     column_config=column_config,
-                    hide_index=True
+                    hide_index=True,
+                    height=600
                 )
                 
-                # Add download button
-                create_download_button(filtered_members[display_cols], "made_members.csv")
 else:
     st.warning("No member data available. Please check your API connection.")
 
