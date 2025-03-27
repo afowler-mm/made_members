@@ -11,123 +11,8 @@ from utils import get_date_n_months_ago, is_education_member, create_download_bu
 from data_processing import process_members_data, prepare_all_members_view, prepare_new_members, calculate_mrr
 from visualizations import show_member_growth, show_plans_and_revenue, show_education_members
 
-# App configuration
-st.set_page_config(
-    page_title="Maine Ad + Design membership dashboard",
-    page_icon="🎨",
-    layout="wide",
-)
-
-# Sidebar for filters and options
-st.sidebar.title("Maine Ad + Design membership dashboard")
-# st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
-
-# Debug mode toggle
-debug_mode = st.sidebar.checkbox("Debug mode")
-
-# Add additional sidebar content
-st.sidebar.markdown("---")
-st.sidebar.caption("Made with ❤️ for Maine Ad + Design")
-
-# Add a refresh button in the sidebar
-refresh_data = False
-
-# Check if the data cache should expire (every 24 hours)
-if "last_fetch_time" in st.session_state:
-    last_fetch_time = st.session_state.last_fetch_time
-    current_time = datetime.now()
-    time_difference = current_time - last_fetch_time
-    # Force refresh if data is older than 24 hours
-    if time_difference.total_seconds() > 24 * 60 * 60:
-        refresh_data = True
-        st.toast("Data cache expired. Refreshing...", icon="🔄")
-
-with st.sidebar:
-    # Show the last updated time
-    if "last_fetch_time" in st.session_state:
-        last_fetch = st.session_state.last_fetch_time.strftime("%b %d, %Y at %I:%M %p")
-        st.caption(f"Last updated: {last_fetch}")
-    
-    # Add refresh button
-    if st.button("🔄 Refresh Data"):
-        # Clear the cache to force a refresh
-        if "members_data" in st.session_state:
-            del st.session_state.members_data
-        if "members_df" in st.session_state:
-            del st.session_state.members_df
-        if "subs_df" in st.session_state:
-            del st.session_state.subs_df
-        if "consolidated_members_cache" in st.session_state:
-            del st.session_state.consolidated_members_cache
-        # Clear all dependent caches too
-        for key in list(st.session_state.keys()):
-            if key.endswith("_cache"):
-                del st.session_state[key]
-        refresh_data = True
-        st.toast("Data cache cleared. Refreshing...", icon="🔄")
-
-# For education feature, force a refresh when running the app for the first time with the new code
-# I think we can drop this now that it's been added?
-if "education_feature_added" not in st.session_state:
-    refresh_data = True
-    st.session_state.education_feature_added = True
-    # Also clear member caches to ensure they have the education flag
-    if "all_members_cache" in st.session_state:
-        del st.session_state.all_members_cache
-    if "consolidated_members_cache" in st.session_state:
-        del st.session_state.consolidated_members_cache
-    # st.toast("Adding education member support. Refreshing data...", icon="🔄")
-
-# Check if data is already in session state
-if "members_data" not in st.session_state or refresh_data:
-    # Loading indicator
-    with st.spinner("Loading membership data..."):        
-        # Fetch all members with pagination
-        progress_text = "Fetching member data (this may take a moment)..."
-        progress_bar = st.progress(0, text=progress_text)
-        
-        for percent_complete in range(0, 100, 10):  # Simulate progress in increments
-            time.sleep(0.1)  # Simulate work being done
-            progress_bar.progress(percent_complete, text=progress_text)
-        
-        members_data = fetch_all_members(debug_mode)
-        progress_bar.progress(100, text="Data fetching complete!")
-        progress_bar.empty()  # Remove the progress bar when complete
-        
-        if debug_mode:
-            st.expander("Members Data Sample").json(members_data[:5] if members_data else [])
-        
-        if not members_data:
-            st.error("Failed to load data. Please check API key and connection.")
-            st.stop()
-        
-        # Process data into a usable format
-        st.toast(f"Successfully loaded data for {len(members_data)} members.", icon="🎉")
-        
-        # Cache the raw data
-        st.session_state.members_data = members_data
-        
-        # Process the data into DataFrames
-        members_df, subs_df = process_members_data(members_data)
-        
-        # Cache the processed dataframes
-        st.session_state.members_df = members_df
-        st.session_state.subs_df = subs_df
-        
-        # Update the last fetch timestamp
-        st.session_state.last_fetch_time = datetime.now()
-else:
-    # Use cached data
-    members_data = st.session_state.members_data
-    members_df = st.session_state.members_df
-    subs_df = st.session_state.subs_df
-
-# Display membership metrics and visualizations
-if 'members_df' in locals() and not members_df.empty:
-    # Summary metrics
-    st.subheader("Metrics")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
+def display_membership_metrics(subs_df):
+    """Display metrics about membership counts and revenue"""
     # Calculate metrics
     current_mrr, paying_members_count, active_count, education_count = calculate_mrr(subs_df)
     
@@ -139,6 +24,9 @@ if 'members_df' in locals() and not members_df.empty:
     past_30_days = today - timedelta(days=30)
     past_90_days = today - timedelta(days=90)
     past_year = today - timedelta(days=365)
+    
+    # Create columns for metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     # Calculate counts for different membership types
     if not subs_df.empty:
@@ -212,35 +100,154 @@ if 'members_df' in locals() and not members_df.empty:
         )
         
         col2.metric(
-            "Small business accounts", 
-            f"{small_business_accounts} ({small_business_count}👩‍🎨)",
+            "Small business 🏢", 
+            f"{small_business_accounts}🏢 ({small_business_count}👥)",
             f"{small_business_accounts_change:+d} from last month"
         )
         
         col3.metric(
-            "Large business accounts", 
-            f"{large_business_accounts} ({large_business_count}👩‍🎨)",
+            "Large business 🏙️", 
+            f"{large_business_accounts}🏙️ ({large_business_count}👥)",
             f"{large_business_accounts_change:+d} from last month"
         )
         
         col4.metric(
-            "Education", 
-            f"{education_count}",
+            "Education 🎓", 
+            f"{education_count}🎓",
             f"{education_change:+d} from last month"
         )
         
         col5.metric(
-            "Monthly revenue", 
+            "Monthly revenue 💰", 
             f"${current_mrr:,.2f}", 
             f"{mrr_change_percent:+.1f}% from last month"
         )
     else:
         # Display placeholders if no data
         col1.metric("Individual members 👩‍🎨", 0)
-        col2.metric("Small business accounts", "0 (0👩‍🎨)")
-        col3.metric("Large business accounts", "0🏙️ (0👩‍🎨)")
-        col4.metric("Education 🎓", "0")
+        col2.metric("Small business 🏢", "0🏢 (0👥)")
+        col3.metric("Large business 🏙️", "0🏙️ (0👥)")
+        col4.metric("Education 🎓", "0🎓")
         col5.metric("Monthly revenue 💰", "$0.00")
+    
+    return active_count
+
+# App configuration
+st.set_page_config(
+    page_title="Maine Ad + Design membership dashboard",
+    page_icon="🎨",
+    layout="wide",
+)
+
+# Sidebar for filters and options
+st.sidebar.title("Maine Ad + Design membership dashboard")
+# st.sidebar.image("https://site-assets.memberful.com/qiyhr8wsbhqpdf9s9p4yn78mlcsy", width=200)
+
+# Debug mode toggle
+debug_mode = st.sidebar.checkbox("Debug mode")
+
+# Add a refresh button in the sidebar
+refresh_data = False
+
+# Check if the data cache should expire (every 24 hours)
+if "last_fetch_time" in st.session_state:
+    last_fetch_time = st.session_state.last_fetch_time
+    current_time = datetime.now()
+    time_difference = current_time - last_fetch_time
+    # Force refresh if data is older than 24 hours
+    if time_difference.total_seconds() > 24 * 60 * 60:
+        refresh_data = True
+        st.toast("Data cache expired. Refreshing...", icon="🔄")
+
+if debug_mode:
+    with st.sidebar:
+        # Add refresh button
+        if st.button("🔄 Refresh data"):
+            # Clear the cache to force a refresh
+            if "members_data" in st.session_state:
+                del st.session_state.members_data
+            if "members_df" in st.session_state:
+                del st.session_state.members_df
+            if "subs_df" in st.session_state:
+                del st.session_state.subs_df
+            if "consolidated_members_cache" in st.session_state:
+                del st.session_state.consolidated_members_cache
+            # Clear all dependent caches too
+            for key in list(st.session_state.keys()):
+                if key.endswith("_cache"):
+                    del st.session_state[key]
+            refresh_data = True
+            st.toast("Data cache cleared. Refreshing...", icon="🔄")
+        
+        # Show the last updated time
+        if "last_fetch_time" in st.session_state:
+            last_fetch = st.session_state.last_fetch_time.strftime("%b %d, %Y at %I:%M %p")
+            st.caption(f"Last updated: {last_fetch}")
+
+# For education feature, force a refresh when running the app for the first time with the new code
+# I think we can drop this now that it's been added?
+if "education_feature_added" not in st.session_state:
+    refresh_data = True
+    st.session_state.education_feature_added = True
+    # Also clear member caches to ensure they have the education flag
+    if "all_members_cache" in st.session_state:
+        del st.session_state.all_members_cache
+    if "consolidated_members_cache" in st.session_state:
+        del st.session_state.consolidated_members_cache
+    # st.toast("Adding education member support. Refreshing data...", icon="🔄")
+
+# Check if data is already in session state
+if "members_data" not in st.session_state or refresh_data:
+    # Loading indicator
+    with st.spinner("Loading membership data..."):        
+        # Fetch all members with pagination
+        progress_text = "Fetching member data (this may take a moment)..."
+        progress_bar = st.progress(0, text=progress_text)
+        
+        for percent_complete in range(0, 100, 10):  # Simulate progress in increments
+            time.sleep(0.1)  # Simulate work being done
+            progress_bar.progress(percent_complete, text=progress_text)
+        
+        members_data = fetch_all_members(debug_mode)
+        progress_bar.progress(100, text="Data fetching complete!")
+        progress_bar.empty()  # Remove the progress bar when complete
+        
+        if debug_mode:
+            st.expander("Members Data Sample").json(members_data[:5] if members_data else [])
+        
+        if not members_data:
+            st.error("Failed to load data. Please check API key and connection.")
+            st.stop()
+        
+        # Process data into a usable format
+        st.toast(f"Successfully loaded data for {len(members_data)} members.", icon="🎉")
+        
+        # Cache the raw data
+        st.session_state.members_data = members_data
+        
+        # Process the data into DataFrames
+        members_df, subs_df = process_members_data(members_data)
+        
+        # Cache the processed dataframes
+        st.session_state.members_df = members_df
+        st.session_state.subs_df = subs_df
+        
+        # Update the last fetch timestamp
+        st.session_state.last_fetch_time = datetime.now()
+else:
+    # Use cached data
+    members_data = st.session_state.members_data
+    members_df = st.session_state.members_df
+    subs_df = st.session_state.subs_df
+
+# Display dashboard with membership metrics and visualizations
+if 'members_df' in locals() and not members_df.empty:
+    
+    # Calculate metrics for pass to education visualization
+    _, _, active_count, education_count = calculate_mrr(subs_df)
+    
+    # Store education count in session state for later use
+    st.session_state.education_count = education_count
     
     # Main Dashboard Tabs
     st.divider()
@@ -254,6 +261,9 @@ if 'members_df' in locals() and not members_df.empty:
     if not subs_df.empty:
         # Member Growth visualization
         with main_tabs[0]:
+            st.subheader("Current Membership")
+            display_membership_metrics(subs_df)
+            st.divider()
             show_member_growth(subs_df)
         
         # Combined Plans and Revenue visualization
@@ -385,4 +395,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown("Made with ❤️ for Maine Ad + Design")
+st.caption("Made with ❤️ for Maine Ad + Design")
