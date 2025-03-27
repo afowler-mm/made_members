@@ -6,10 +6,13 @@ import os
 import plotly.express as px
 
 # Import our custom modules
+import api
 from api import get_memberful_data, fetch_all_members
 from utils import get_date_n_months_ago, is_education_member, create_download_button
+import data_processing
 from data_processing import process_members_data, prepare_all_members_view, prepare_new_members, calculate_mrr
-from visualizations import show_member_growth, show_plans_and_revenue, show_education_members
+import visualizations
+from visualizations import show_member_growth, show_plans_and_revenue, show_education_members, show_mrr_waterfall, show_mrr_trend, show_revenue_breakdown
 
 def display_membership_metrics(subs_df):
     """Display metrics about membership counts and revenue"""
@@ -257,11 +260,30 @@ if 'members_df' in locals() and not members_df.empty:
         main_tabs = st.tabs(["Member Growth", "Plans and Revenue", "Member Directory"])
     
     if not subs_df.empty:
+        # Fetch activity data for enhanced visualizations if not already in session state
+        if "activities_cache" not in st.session_state:
+            with st.spinner("Fetching recent subscription activities..."):
+                # Get activity data for the past 6 months
+                six_months_ago = datetime.now() - timedelta(days=180)
+                activities_data = api.fetch_subscription_activities(six_months_ago, debug_mode=debug_mode)
+                
+                # Process activity data if we have any
+                if activities_data:
+                    activities_df = data_processing.process_subscription_activities(activities_data)
+                    st.session_state.activities_cache = activities_df
+                else:
+                    st.session_state.activities_cache = pd.DataFrame()  # Empty DataFrame
+        
         # Member Growth visualization
         with main_tabs[0]:
             display_membership_metrics(subs_df)
             st.divider()
-            show_member_growth(subs_df)
+            
+            # Pass activities data to show_member_growth if available
+            if "activities_cache" in st.session_state and not st.session_state.activities_cache.empty:
+                show_member_growth(subs_df, st.session_state.activities_cache)
+            else:
+                show_member_growth(subs_df)
         
         # Combined Plans and Revenue visualization
         with main_tabs[1]:

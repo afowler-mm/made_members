@@ -4,11 +4,18 @@ Visualization functions for the Maine Ad + Design membership dashboard
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 from utils import clean_period_data, create_download_button
-from datetime import datetime
+from datetime import datetime, timedelta
 
-def show_member_growth(subs_df):
-    """Show member growth visualization using Streamlit charts"""
+def show_member_growth(subs_df, activities_df=None):
+    """
+    Show member growth visualization using Streamlit charts
+    
+    Args:
+        subs_df: DataFrame of subscription data
+        activities_df: Optional DataFrame of activity data from the Memberful API
+    """
     if subs_df.empty:
         st.info("No subscription data available for growth chart.")
         return
@@ -26,33 +33,123 @@ def show_member_growth(subs_df):
     # Count only unique subscriptions to avoid double-counting
     unique_subs = recent_subs.drop_duplicates('subscription_id')
     
-    # Group by month to get new subscriptions
-    new_by_month = unique_subs.groupby(unique_subs["month"]).size().reset_index(name="new")
+    # Initialize dataframes for different types of changes
+    activity_types = {
+        'new': ['new_order'],  # New subscriptions
+        'churned': ['subscription_deactivated'],  # Cancellations
+        'renewed': ['renewal']  # Renewals
+    }
     
-    # Get expired/canceled subscriptions by month
-    today = datetime.now()
-    expired_subs = recent_subs[(recent_subs["expires_at"].notna()) & 
-                             (recent_subs["expires_at"] <= today) & 
-                             (recent_subs["active"] == False)]
+    # If we have activity data, use it for more detailed metrics
+    if activities_df is not None and not activities_df.empty:
+        # Convert timestamp to datetime if needed
+        if "created_at" in activities_df.columns and not pd.api.types.is_datetime64_any_dtype(activities_df["created_at"]):
+            activities_df["created_at"] = pd.to_datetime(activities_df["created_at"], unit='s')
+        
+        # Filter to recent activities
+        recent_activities = activities_df[activities_df["created_at"] >= start_date]
+        
+        if not recent_activities.empty:
+            # Add month column for grouping
+            recent_activities["month"] = recent_activities["created_at"].dt.to_period("M")
+            
+            # Get counts by month for each activity type
+            change_by_type = {}
+            
+            for change_type, act_types in activity_types.items():
+                # Filter activities by type
+                type_activities = recent_activities[recent_activities["type"].isin(act_types)]
+                
+                if not type_activities.empty:
+                    # Count unique subscriptions per month
+                    by_month = type_activities.drop_duplicates('subscription_id').groupby("month").size().reset_index(name=change_type)
+                    change_by_type[change_type] = by_month
+            
+            # Group by month to get new subscriptions from activity data
+            if 'new' in change_by_type:
+                new_by_month = change_by_type['new']
+            else:
+                # Fall back to subscription data
+                new_by_month = unique_subs.groupby(unique_subs["month"]).size().reset_index(name="new")
+            
+            # Get churned subscriptions from activity data
+            if 'churned' in change_by_type:
+                churned_by_month = change_by_type['churned']
+            else:
+                # Fall back to subscription data for churned
+                today = datetime.now()
+                expired_subs = recent_subs[(recent_subs["expires_at"].notna()) & 
+                                        (recent_subs["expires_at"] <= today) & 
+                                        (recent_subs["active"] == False)]
+                
+                # Process expiration dates into months and count unique cancellations
+                churned_by_month = pd.DataFrame(columns=["month", "churned"])
+                if not expired_subs.empty:
+                    expired_subs["month"] = expired_subs["expires_at"].dt.to_period("M")
+                    churned_by_month = expired_subs.drop_duplicates('subscription_id').groupby("month").size().reset_index(name="churned")
+            
+            # Get renewals from activity data
+            if 'renewed' in change_by_type:
+                renewed_by_month = change_by_type['renewed']
+            else:
+                # No renewal data available from subscriptions
+                renewed_by_month = pd.DataFrame(columns=["month", "renewed"])
+        else:
+            # Fall back to subscription data
+            new_by_month = unique_subs.groupby(unique_subs["month"]).size().reset_index(name="new")
+            
+            # Get expired/canceled subscriptions by month
+            today = datetime.now()
+            expired_subs = recent_subs[(recent_subs["expires_at"].notna()) & 
+                                    (recent_subs["expires_at"] <= today) & 
+                                    (recent_subs["active"] == False)]
+            
+            # Process expiration dates into months and count unique cancellations
+            churned_by_month = pd.DataFrame(columns=["month", "churned"])
+            if not expired_subs.empty:
+                expired_subs["month"] = expired_subs["expires_at"].dt.to_period("M")
+                churned_by_month = expired_subs.drop_duplicates('subscription_id').groupby("month").size().reset_index(name="churned")
+            
+            # No renewal data available from subscriptions
+            renewed_by_month = pd.DataFrame(columns=["month", "renewed"])
+    else:
+        # Use subscription data only
+        new_by_month = unique_subs.groupby(unique_subs["month"]).size().reset_index(name="new")
+        
+        # Get expired/canceled subscriptions by month
+        today = datetime.now()
+        expired_subs = recent_subs[(recent_subs["expires_at"].notna()) & 
+                                (recent_subs["expires_at"] <= today) & 
+                                (recent_subs["active"] == False)]
+        
+        # Process expiration dates into months and count unique cancellations
+        churned_by_month = pd.DataFrame(columns=["month", "churned"])
+        if not expired_subs.empty:
+            expired_subs["month"] = expired_subs["expires_at"].dt.to_period("M")
+            churned_by_month = expired_subs.drop_duplicates('subscription_id').groupby("month").size().reset_index(name="churned")
+        
+        # No renewal data available from subscriptions
+        renewed_by_month = pd.DataFrame(columns=["month", "renewed"])
     
-    # Process expiration dates into months and count unique cancellations
-    churned_by_month = pd.DataFrame(columns=["month", "churned"])
-    if not expired_subs.empty:
-        expired_subs["month"] = expired_subs["expires_at"].dt.to_period("M")
-        churned_by_month = expired_subs.drop_duplicates('subscription_id').groupby("month").size().reset_index(name="churned")
-    
-    # Create a list of all unique months from both dataframes
+    # Create a list of all unique months from all dataframes
     all_months = pd.concat([
         new_by_month["month"] if not new_by_month.empty else pd.Series(dtype='period[M]'),
-        churned_by_month["month"] if not churned_by_month.empty else pd.Series(dtype='period[M]')
+        churned_by_month["month"] if not churned_by_month.empty else pd.Series(dtype='period[M]'),
+        renewed_by_month["month"] if not renewed_by_month.empty and not renewed_by_month.empty else pd.Series(dtype='period[M]')
     ]).unique()
     
     # Create a dataframe with all months
     monthly_changes = pd.DataFrame({"month": all_months})
     
-    # Merge in the new and churned values
+    # Merge in all the changes
     monthly_changes = pd.merge(monthly_changes, new_by_month, on="month", how="left").fillna(0)
     monthly_changes = pd.merge(monthly_changes, churned_by_month, on="month", how="left").fillna(0)
+    
+    # Add renewals if available
+    if not renewed_by_month.empty and "renewed" in renewed_by_month.columns:
+        monthly_changes = pd.merge(monthly_changes, renewed_by_month, on="month", how="left").fillna(0)
+    else:
+        monthly_changes["renewed"] = 0
     
     # Calculate net change
     monthly_changes["net"] = monthly_changes["new"] - monthly_changes["churned"]
@@ -76,22 +173,26 @@ def show_member_growth(subs_df):
     # Sort monthly_changes chronologically first
     monthly_changes = monthly_changes.sort_values("month_dt")
     
-    # Display explanatory text
-    if monthly_changes["churned"].sum() == 0:
-        pass
-    else:
-        st.caption("Shows monthly subscription activity: new additions, cancellations, and lapses")
+    # Determine which columns to plot based on data availability
+    plot_columns = ["new", "churned"]
+    if monthly_changes["renewed"].sum() > 0:
+        plot_columns.append("renewed")
+    
+    # Only show explanation if we have cancellations
+    if monthly_changes["churned"].sum() > 0:
+        st.caption("Shows monthly subscription activity: new additions, cancellations, and renewals")
     
     # Use Plotly for better control over x-axis ordering
     fig = px.bar(
         monthly_changes,
         x="display_month",
-        y=["new", "churned"],
+        y=plot_columns,
         barmode="group",
         labels={
             "display_month": "Month",
             "new": "New Subscriptions",
             "churned": "Cancellations",
+            "renewed": "Renewals",
             "value": "Count",
             "variable": "Type"
         },
@@ -103,6 +204,13 @@ def show_member_growth(subs_df):
         y=[-y for y in monthly_changes["churned"].values],
         selector=dict(name="churned")
     )
+    
+    # Define better names for the traces
+    newnames = {
+        'new': 'New Subscriptions', 
+        'churned': 'Cancellations',
+        'renewed': 'Renewals'
+    }
     
     # Set custom axis labels and ensure correct order
     fig.update_layout(
@@ -117,8 +225,7 @@ def show_member_growth(subs_df):
     )
     
     # Update trace names
-    newnames = {'new': 'New Subscriptions', 'churned': 'Cancellations'}
-    fig.for_each_trace(lambda t: t.update(name = newnames[t.name]))
+    fig.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
     
     # Display the plotly chart
     st.plotly_chart(fig, use_container_width=True)
@@ -142,6 +249,9 @@ def show_member_growth(subs_df):
     # First, create a temporary list to build the data backwards
     temp_membership_data = []
     
+    # Determine what categories we have data for
+    has_renewals = monthly_changes["renewed"].sum() > 0
+    
     # Reverse the months to calculate backwards from current
     for i, month in enumerate(reversed(all_months_sorted)):
         # Get data for this month in our changes dataframe
@@ -154,6 +264,7 @@ def show_member_growth(subs_df):
             # Get the change numbers for this month
             new_members = int(month_data["new"].iloc[0])
             churned_members = int(month_data["churned"].iloc[0])
+            renewed_members = int(month_data["renewed"].iloc[0]) if has_renewals else 0
             
             # If this is the most recent month (first in reversed loop)
             if i == 0:
@@ -165,14 +276,21 @@ def show_member_growth(subs_df):
                 running_total = running_total - new_members + churned_members
                 month_total = running_total
             
-            # Add to our temporary data
-            temp_membership_data.append({
+            # Prepare data object for this month
+            month_obj = {
                 "Month": display_month,
                 "Continuing Members": month_total - new_members,
                 "New Members": new_members,
                 "Cancelled Members": -churned_members if churned_members > 0 else 0,
                 "Total Active": month_total
-            })
+            }
+            
+            # Add renewals if we have them
+            if has_renewals:
+                month_obj["Renewals"] = renewed_members
+                
+            # Add to our temporary data
+            temp_membership_data.append(month_obj)
     
     # Reverse the data back to chronological order
     membership_data = list(reversed(temp_membership_data))
@@ -190,11 +308,28 @@ def show_member_growth(subs_df):
         # Sort by date
         membership_df = membership_df.sort_values("Month_dt")
         
-        # Display explanation
-        st.caption("Shows the total active membership each month, broken down by continuing, new, and cancelled members")
+        # Display explanation with appropriate categories
+        caption = "Shows the total active membership each month, broken down by continuing, new"
+        
+        # Add renewals to caption if we have them
+        if has_renewals and "Renewals" in membership_df.columns:
+            caption += ", renewals"
+            
+        # Add cancellations to caption if we have them
+        if membership_df["Cancelled Members"].sum() < 0:
+            caption += ", and cancelled members"
+        else:
+            caption += " members"
+            
+        st.caption(caption)
         
         # Determine columns for stacked bar chart
         stack_columns = ["Continuing Members", "New Members"]
+        
+        # Add renewals to stack if we have them
+        if has_renewals and "Renewals" in membership_df.columns and membership_df["Renewals"].sum() > 0:
+            stack_columns.append("Renewals")
+            
         # Only include cancelled if we have any
         if membership_df["Cancelled Members"].sum() < 0:
             stack_columns.append("Cancelled Members")
@@ -245,6 +380,431 @@ def show_member_growth(subs_df):
         st.plotly_chart(line_fig, use_container_width=True)
     else:
         st.info("No membership data available to display.")
+        
+def show_mrr_waterfall(mrr_changes_df):
+    """
+    Show Monthly Recurring Revenue changes as a waterfall chart
+    
+    This chart shows MRR changes by category:
+    - Starting MRR
+    - New Members (positive)
+    - Reactivations (positive)
+    - Upgrades (positive)
+    - Downgrades (negative)
+    - Cancellations (negative)
+    - Failed Payments (negative)
+    - Total MRR (net)
+    
+    Args:
+        mrr_changes_df (pd.DataFrame): Dataframe of MRR changes by month and category
+    """
+    if mrr_changes_df.empty:
+        st.info("No MRR data available to display")
+        return
+        
+    # Filter to the most recent month
+    months = sorted(mrr_changes_df["month_dt"].unique())
+    
+    # Add month selection
+    selected_month_idx = len(months) - 1  # Default to most recent month
+    if len(months) > 1:
+        month_options = [m.strftime("%B %Y") for m in months]
+        selected_month = st.selectbox(
+            "Select month", 
+            options=month_options,
+            index=selected_month_idx
+        )
+        selected_month_idx = month_options.index(selected_month)
+        
+    selected_month_dt = months[selected_month_idx]
+    month_display = selected_month_dt.strftime("%B %Y")
+    
+    # Filter data for the selected month
+    month_data = mrr_changes_df[mrr_changes_df["month_dt"] == selected_month_dt]
+    
+    # Sort data by category order
+    month_data = month_data.sort_values("category_order")
+    
+    # Define category colors
+    category_colors = {
+        "Starting MRR": "#1f77b4",  # Blue
+        "New Members": "#2ca02c",   # Green
+        "Reactivations": "#9467bd", # Purple
+        "Upgrades": "#17becf",      # Cyan
+        "Downgrades": "#ff7f0e",    # Orange
+        "Cancellations": "#d62728", # Red
+        "Failed Payments": "#e377c2", # Pink
+        "Total MRR": "#1f77b4"      # Blue (same as starting)
+    }
+    
+    # Create the waterfall chart
+    categories = month_data["category"].tolist()
+    values = month_data["mrr_impact_dollars"].tolist()
+    
+    # Determine the measure for each category (total, relative, or absolute)
+    measure = []
+    for cat in categories:
+        if cat in ["Starting MRR", "Total MRR"]:
+            measure.append("total")
+        else:
+            measure.append("relative")
+    
+    # Create the text to display on each bar
+    text = []
+    for cat, value in zip(categories, values):
+        if cat in ["Starting MRR", "Total MRR"]:
+            text.append(f"${value:.2f}")
+        else:
+            if value >= 0:
+                text.append(f"+${value:.2f}")
+            else:
+                text.append(f"${value:.2f}")
+    
+    # Create the figure
+    fig = go.Figure(go.Waterfall(
+        name="MRR Changes",
+        orientation="v",
+        measure=measure,
+        x=categories,
+        textposition="outside",
+        text=text,
+        y=values,
+        connector={"line": {"color": "rgb(63, 63, 63)"}},
+        decreasing={"marker": {"color": "#d62728"}},  # Red for decreasing
+        increasing={"marker": {"color": "#2ca02c"}},  # Green for increasing
+        totals={"marker": {"color": "#1f77b4"}}      # Blue for totals
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        title={
+            "text": f"MRR Changes for {month_display}",
+            "y": 0.9,
+            "x": 0.5,
+            "xanchor": "center",
+            "yanchor": "top"
+        },
+        showlegend=False,
+        xaxis_title="",
+        yaxis_title="Monthly Recurring Revenue ($)",
+        yaxis=dict(
+            gridcolor="lightgray"
+        ),
+        height=500
+    )
+    
+    # Display the waterfall chart
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Show month-over-month comparison
+    if len(months) > 1 and selected_month_idx > 0:
+        st.subheader("Month-over-Month MRR Changes")
+        
+        # Get current and previous month data
+        current_month = months[selected_month_idx]
+        previous_month = months[selected_month_idx - 1]
+        
+        # Get starting and ending MRR for both months
+        current_starting_mrr = month_data[month_data["category"] == "Starting MRR"]["mrr_impact_dollars"].iloc[0]
+        current_total_mrr = month_data[month_data["category"] == "Total MRR"]["mrr_impact_dollars"].iloc[0]
+        
+        prev_month_data = mrr_changes_df[mrr_changes_df["month_dt"] == previous_month]
+        prev_starting_mrr = prev_month_data[prev_month_data["category"] == "Starting MRR"]["mrr_impact_dollars"].iloc[0]
+        prev_total_mrr = prev_month_data[prev_month_data["category"] == "Total MRR"]["mrr_impact_dollars"].iloc[0]
+        
+        # Calculate changes
+        starting_mrr_change = current_starting_mrr - prev_starting_mrr
+        starting_mrr_pct = (starting_mrr_change / prev_starting_mrr * 100) if prev_starting_mrr > 0 else 0
+        
+        total_mrr_change = current_total_mrr - prev_total_mrr
+        total_mrr_pct = (total_mrr_change / prev_total_mrr * 100) if prev_total_mrr > 0 else 0
+        
+        # Display the metrics side by side
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(
+                "Starting MRR", 
+                f"${current_starting_mrr:.2f}", 
+                f"{starting_mrr_change:+.2f} ({starting_mrr_pct:+.1f}%) from previous month"
+            )
+            
+        with col2:
+            st.metric(
+                "Total MRR", 
+                f"${current_total_mrr:.2f}", 
+                f"{total_mrr_change:+.2f} ({total_mrr_pct:+.1f}%) from previous month"
+            )
+    
+    # Show detailed breakdown in a table
+    st.subheader(f"Detailed MRR Breakdown for {month_display}")
+    
+    # Create a clean table for display
+    table_data = month_data.copy()
+    table_data = table_data[["category", "mrr_impact_dollars"]]
+    table_data.columns = ["Category", "Amount ($)"]
+    
+    # Format the amount column
+    table_data["Amount ($)"] = table_data["Amount ($)"].apply(
+        lambda x: f"${x:,.2f}"
+    )
+    
+    # Display the table
+    st.dataframe(table_data, hide_index=True)
+    
+def show_mrr_trend(mrr_changes_df):
+    """
+    Show MRR trend over time
+    
+    Args:
+        mrr_changes_df (pd.DataFrame): Dataframe of MRR changes by month and category
+    """
+    if mrr_changes_df.empty:
+        st.info("No MRR data available to display")
+        return
+    
+    # Get total MRR by month
+    total_mrr = mrr_changes_df[mrr_changes_df["category"] == "Total MRR"].copy()
+    starting_mrr = mrr_changes_df[mrr_changes_df["category"] == "Starting MRR"].copy()
+    
+    # Format month labels
+    total_mrr["month_label"] = total_mrr["month_dt"].dt.strftime("%b %Y")
+    starting_mrr["month_label"] = starting_mrr["month_dt"].dt.strftime("%b %Y")
+    
+    # Sort by month
+    total_mrr = total_mrr.sort_values("month_dt")
+    starting_mrr = starting_mrr.sort_values("month_dt")
+    
+    # Create the figure
+    fig = go.Figure()
+    
+    # Add starting MRR line
+    fig.add_trace(go.Scatter(
+        x=starting_mrr["month_label"],
+        y=starting_mrr["mrr_impact_dollars"],
+        mode="lines+markers",
+        name="Starting MRR",
+        line=dict(color="#1f77b4", width=2),
+        marker=dict(size=8)
+    ))
+    
+    # Add total MRR line
+    fig.add_trace(go.Scatter(
+        x=total_mrr["month_label"],
+        y=total_mrr["mrr_impact_dollars"],
+        mode="lines+markers",
+        name="Total MRR",
+        line=dict(color="#2ca02c", width=2),
+        marker=dict(size=8)
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        title={
+            "text": "Monthly Recurring Revenue (MRR) Trend",
+            "y": 0.9,
+            "x": 0.5,
+            "xanchor": "center",
+            "yanchor": "top"
+        },
+        xaxis_title="",
+        yaxis_title="Monthly Recurring Revenue ($)",
+        yaxis=dict(
+            gridcolor="lightgray"
+        ),
+        height=400,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        )
+    )
+    
+    # Display the trend chart
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Calculate growth metrics
+    if len(total_mrr) > 1:
+        # Calculate month-over-month growth rate
+        latest_mrr = total_mrr["mrr_impact_dollars"].iloc[-1]
+        previous_mrr = total_mrr["mrr_impact_dollars"].iloc[-2]
+        mom_growth = (latest_mrr - previous_mrr) / previous_mrr * 100 if previous_mrr > 0 else 0
+        
+        # Calculate month-over-month growth amount
+        mom_growth_amount = latest_mrr - previous_mrr
+        
+        # Calculate estimated annual MRR
+        annual_mrr = latest_mrr * 12
+        
+        # Display metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Month-over-Month Growth", 
+                f"{mom_growth:.1f}%", 
+                f"${mom_growth_amount:+,.2f}"
+            )
+            
+        with col2:
+            st.metric(
+                "Current MRR", 
+                f"${latest_mrr:,.2f}"
+            )
+            
+        with col3:
+            st.metric(
+                "Estimated Annual Revenue", 
+                f"${annual_mrr:,.2f}"
+            )
+            
+def show_revenue_breakdown(activities_df):
+    """
+    Show revenue breakdown by category
+    
+    Args:
+        activities_df (pd.DataFrame): Dataframe of subscription activities
+    """
+    if activities_df.empty:
+        st.info("No activity data available to display")
+        return
+        
+    # Get the latest 12 months of data
+    today = datetime.now()
+    twelve_months_ago = today - timedelta(days=365)
+    
+    # Filter for recent activities
+    recent_activities = activities_df[activities_df["created_at"] >= twelve_months_ago].copy()
+    
+    if recent_activities.empty:
+        st.info("No recent activity data available to display")
+        return
+        
+    # Group by month and type
+    monthly_data = recent_activities.groupby(["month_name", "category"])["mrr_impact_dollars"].sum().reset_index()
+    
+    # Filter to only include main categories
+    categories = ["New Members", "Reactivations", "Upgrades", "Downgrades", "Cancellations", "Failed Payments"]
+    monthly_data = monthly_data[monthly_data["category"].isin(categories)]
+    
+    # Add month datetime for sorting
+    monthly_data["month_dt"] = monthly_data["month_name"].apply(
+        lambda x: datetime.strptime(x, "%b %Y") if isinstance(x, str) else None
+    )
+    
+    # Sort by month
+    monthly_data = monthly_data.sort_values("month_dt")
+    
+    # Get list of months for x-axis order
+    months = sorted(monthly_data["month_dt"].unique())
+    month_labels = [m.strftime("%b %Y") for m in months]
+    
+    # Create stacked bar chart
+    positive_categories = ["New Members", "Reactivations", "Upgrades"]
+    negative_categories = ["Downgrades", "Cancellations", "Failed Payments"]
+    
+    # Prepare data for visualization
+    positive_data = monthly_data[monthly_data["category"].isin(positive_categories)].copy()
+    negative_data = monthly_data[monthly_data["category"].isin(negative_categories)].copy()
+    
+    # Ensure negative values are actually negative
+    negative_data["mrr_impact_dollars"] = negative_data["mrr_impact_dollars"].abs() * -1
+    
+    # Combine data for visualization
+    viz_data = pd.concat([positive_data, negative_data])
+    
+    # Create the figure
+    fig = px.bar(
+        viz_data,
+        x="month_name",
+        y="mrr_impact_dollars",
+        color="category",
+        color_discrete_map={
+            "New Members": "#2ca02c",      # Green
+            "Reactivations": "#9467bd",    # Purple
+            "Upgrades": "#17becf",         # Cyan
+            "Downgrades": "#ff7f0e",       # Orange
+            "Cancellations": "#d62728",    # Red
+            "Failed Payments": "#e377c2"   # Pink
+        },
+        title="Monthly Revenue Changes by Category",
+        labels={
+            "month_name": "",
+            "mrr_impact_dollars": "MRR Impact ($)",
+            "category": "Category"
+        },
+        barmode="relative"
+    )
+    
+    # Update layout
+    fig.update_layout(
+        xaxis=dict(
+            categoryorder='array',
+            categoryarray=month_labels
+        ),
+        yaxis=dict(
+            title="MRR Impact ($)",
+            gridcolor="lightgray"
+        ),
+        height=500,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        )
+    )
+    
+    # Display the chart
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Display net MRR change by month
+    st.subheader("Net MRR Change by Month")
+    
+    # Calculate net change by month
+    net_by_month = monthly_data.groupby("month_name")["mrr_impact_dollars"].sum().reset_index()
+    net_by_month["month_dt"] = net_by_month["month_name"].apply(
+        lambda x: datetime.strptime(x, "%b %Y") if isinstance(x, str) else None
+    )
+    net_by_month = net_by_month.sort_values("month_dt")
+    
+    # Create a bar chart for net change
+    net_fig = px.bar(
+        net_by_month,
+        x="month_name",
+        y="mrr_impact_dollars",
+        title="",
+        labels={
+            "month_name": "",
+            "mrr_impact_dollars": "Net MRR Change ($)"
+        },
+        color="mrr_impact_dollars",
+        color_continuous_scale=["#d62728", "#d62728", "#ffffff", "#2ca02c", "#2ca02c"],
+        range_color=[-max(abs(net_by_month["mrr_impact_dollars"])), max(abs(net_by_month["mrr_impact_dollars"]))]
+    )
+    
+    # Update layout
+    net_fig.update_layout(
+        xaxis=dict(
+            categoryorder='array',
+            categoryarray=month_labels
+        ),
+        yaxis=dict(
+            title="Net MRR Change ($)",
+            gridcolor="lightgray"
+        ),
+        height=400,
+        coloraxis_showscale=False
+    )
+    
+    # Add a line for zero
+    net_fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
+    
+    # Display the chart
+    st.plotly_chart(net_fig, use_container_width=True)
 
 def show_plans_and_revenue(subs_df):
     """Show combined membership plan and revenue visualizations"""
