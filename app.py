@@ -2,168 +2,17 @@ import streamlit as st
 import time
 import pandas as pd
 from datetime import datetime, timedelta
-import os
-import plotly.express as px
-import hashlib
 
-# Import our custom modules
-import api
-from api import get_memberful_data, fetch_all_members
-from utils import get_date_n_months_ago, is_education_member, create_download_button
-import data_processing
-from data_processing import process_members_data, prepare_all_members_view, prepare_new_members, calculate_mrr
-import visualizations
-from visualizations import show_member_growth, show_plans_and_revenue, show_education_members, show_mrr_waterfall, show_mrr_trend, show_revenue_breakdown, show_member_activities
-
-def check_password():
-    """Verify the user password or query string bypass"""
-    # Define the password - you can change this to any password you want
-    correct_password = "madeindashboard"
-    hashed_password = hashlib.sha256(correct_password.encode()).hexdigest()
-    
-    # Check for query string parameter first
-    if "pass" in st.query_params:
-        query_password = st.query_params["pass"]
-        if hashlib.sha256(query_password.encode()).hexdigest() == hashed_password:
-            st.session_state["authenticated"] = True
-            # Remove password from URL to prevent accidental sharing
-            st.query_params.clear()
-            return True
-    
-    # If already authenticated, don't show login again
-    if "authenticated" in st.session_state and st.session_state["authenticated"]:
-        return True
-    
-    # Show login form
-    st.title("🔒 Login")
-    password = st.text_input("Enter dashboard password", type="password")
-    
-    if st.button("Login"):
-        if hashlib.sha256(password.encode()).hexdigest() == hashed_password:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password")
-            return False
-    
-    # If we get here, user has not authenticated
-    return False
-
-def display_membership_metrics(subs_df):
-    """Display metrics about membership counts and revenue"""
-    # Calculate metrics
-    current_mrr, paying_members_count, active_count, education_count = calculate_mrr(subs_df)
-    
-    # Store education count in session state for later use
-    st.session_state.education_count = education_count
-    
-    # Set standard time periods for analysis
-    today = datetime.now()
-    past_30_days = today - timedelta(days=30)
-    past_90_days = today - timedelta(days=90)
-    past_year = today - timedelta(days=365)
-    
-    # Create columns for metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    # Calculate counts for different membership types
-    if not subs_df.empty:
-        # Current active members by plan type
-        active_subs = subs_df[subs_df["active"] == True]
-        
-        # Individual members
-        individual_members = active_subs[active_subs["plan"] == "Individual membership"]
-        individual_count = len(individual_members.drop_duplicates("member_id"))
-        
-        # Small business members - count both accounts and total members
-        small_business_members = active_subs[active_subs["plan"] == "Small business membership"]
-        small_business_accounts = len(small_business_members.drop_duplicates("subscription_id"))
-        small_business_count = len(small_business_members.drop_duplicates("member_id"))
-        
-        # Large business members - count both accounts and total members
-        large_business_members = active_subs[active_subs["plan"] == "Large business membership"]
-        large_business_accounts = len(large_business_members.drop_duplicates("subscription_id"))
-        large_business_count = len(large_business_members.drop_duplicates("member_id"))
-        
-        # For month-over-month comparisons, get the active members from 30 days ago
-        thirty_days_ago = today - timedelta(days=30)
-        
-        # Get a snapshot of active members 30 days ago
-        active_month_ago = subs_df[
-            (subs_df["created_at"] <= thirty_days_ago) & 
-            ((subs_df["expires_at"] > thirty_days_ago) | (subs_df["expires_at"].isna()))
-        ]
-        
-        # Get counts by plan type 30 days ago
-        individual_month_ago = active_month_ago[active_month_ago["plan"] == "Individual membership"]
-        individual_count_month_ago = len(individual_month_ago.drop_duplicates("member_id"))
-        individual_change = individual_count - individual_count_month_ago
-        
-        small_business_month_ago = active_month_ago[active_month_ago["plan"] == "Small business membership"]
-        small_business_accounts_month_ago = len(small_business_month_ago.drop_duplicates("subscription_id"))
-        small_business_count_month_ago = len(small_business_month_ago.drop_duplicates("member_id"))
-        small_business_accounts_change = small_business_accounts - small_business_accounts_month_ago
-        small_business_change = small_business_count - small_business_count_month_ago
-        
-        large_business_month_ago = active_month_ago[active_month_ago["plan"] == "Large business membership"]
-        large_business_accounts_month_ago = len(large_business_month_ago.drop_duplicates("subscription_id"))
-        large_business_count_month_ago = len(large_business_month_ago.drop_duplicates("member_id"))
-        large_business_accounts_change = large_business_accounts - large_business_accounts_month_ago
-        large_business_change = large_business_count - large_business_count_month_ago
-        
-        # Calculate education members month-over-month
-        if "is_education" in subs_df.columns:
-            education_month_ago = active_month_ago[active_month_ago["is_education"] == True]
-            education_count_month_ago = len(education_month_ago.drop_duplicates("member_id"))
-            education_change = education_count - education_count_month_ago
-        else:
-            education_change = 0
-        
-        # Calculate MRR from last month
-        paying_month_ago = active_month_ago
-        if "is_education" in subs_df.columns:
-            paying_month_ago = paying_month_ago[paying_month_ago["is_education"] == False]
-        paying_month_ago = paying_month_ago.drop_duplicates("subscription_id")
-        previous_mrr = paying_month_ago["monthly_value"].sum() / 100 if not paying_month_ago.empty else 0
-        
-        # Calculate month-over-month change for MRR
-        mrr_change = current_mrr - previous_mrr
-        mrr_change_percent = (mrr_change / previous_mrr * 100) if previous_mrr > 0 else 0
-        
-        # Display metrics with month-over-month changes
-        col1.metric(
-            "Individual members", 
-            individual_count,
-            f"{individual_change:+d} from last month"
-        )
-        col1.caption("Includes education members")
-        
-        col2.metric(
-            "Small business memberships", 
-            f"{small_business_accounts} ({small_business_count}👥)",
-            f"{small_business_accounts_change:+d} from last month"
-        )
-        
-        col3.metric(
-            "Large business memberships", 
-            f"{large_business_accounts} ({large_business_count}👥)",
-            f"{large_business_accounts_change:+d} from last month"
-        )
-        
-        col4.metric(
-            "Education members", 
-            f"{education_count}",
-            f"{education_change:+d} from last month"
-        )
-        
-        col5.metric(
-            "Monthly revenue", 
-            f"${current_mrr:,.2f}", 
-            f"{mrr_change_percent:+.1f}% from last month"
-        )
-        col5.caption("⚠️ Note: May not yet be accurate. Check in [Memberful admin](https://made.memberful.com/admin/metrics/mrr).")
-
-    return active_count
+# Import modules from restructured codebase
+from src.api import fetch_all_members, fetch_subscription_activities
+from src.data import process_members_data, process_subscription_activities, calculate_mrr
+from src.ui import check_password, display_membership_metrics, show_member_directory
+from src.visualizations import (
+    show_member_growth, 
+    show_plans_and_revenue, 
+    show_education_members, 
+    show_member_activities
+)
 
 # App configuration
 st.set_page_config(
@@ -222,7 +71,6 @@ if debug_mode:
             st.caption(f"Last updated: {last_fetch}")
 
 # For education feature, force a refresh when running the app for the first time with the new code
-# I think we can drop this now that it's been added?
 if "education_feature_added" not in st.session_state:
     refresh_data = True
     st.session_state.education_feature_added = True
@@ -231,7 +79,6 @@ if "education_feature_added" not in st.session_state:
         del st.session_state.all_members_cache
     if "consolidated_members_cache" in st.session_state:
         del st.session_state.consolidated_members_cache
-    # st.toast("Adding education member support. Refreshing data...", icon="🔄")
 
 # Check if data is already in session state
 if "members_data" not in st.session_state or refresh_data:
@@ -302,11 +149,11 @@ if 'members_df' in locals() and not members_df.empty:
             with st.spinner("Fetching recent subscription activities..."):
                 # Get activity data for the past 12 months for more complete financial history
                 twelve_months_ago = datetime.now() - timedelta(days=365)
-                activities_data = api.fetch_subscription_activities(twelve_months_ago, debug_mode=debug_mode)
+                activities_data = fetch_subscription_activities(twelve_months_ago, debug_mode=debug_mode)
                 
                 # Process activity data if we have any
                 if activities_data:
-                    activities_df = data_processing.process_subscription_activities(activities_data)
+                    activities_df = process_subscription_activities(activities_data)
                     
                     # Debug - check first few activities' monthly values
                     if debug_mode and not activities_df.empty:
@@ -338,11 +185,11 @@ if 'members_df' in locals() and not members_df.empty:
                     with st.spinner("Fetching member activities..."):
                         # Get activity data for the past 12 months
                         twelve_months_ago = datetime.now() - timedelta(days=365)
-                        activities_data = api.fetch_subscription_activities(twelve_months_ago, debug_mode=debug_mode)
+                        activities_data = fetch_subscription_activities(twelve_months_ago, debug_mode=debug_mode)
                         
                         # Process activity data if we have any
                         if activities_data:
-                            activities_df = data_processing.process_subscription_activities(activities_data)
+                            activities_df = process_subscription_activities(activities_data)
                             st.session_state.activities_cache = activities_df
                             st.rerun()
                         else:
@@ -373,71 +220,8 @@ if 'members_df' in locals() and not members_df.empty:
             
         # Member Directory tab
         with main_tabs[member_directory_tab_index]:
-            # Store member data in session state if not already there
-            if "all_members_cache" not in st.session_state and not subs_df.empty:
-                # Create a unique list of members with their subscription info
-                all_members = prepare_all_members_view(members_df, subs_df)
-                st.session_state.all_members_cache = all_members
-                
-                # Also cache available plans
-                st.session_state.available_plans = subs_df["plan"].unique().tolist()
-                
-            # Simplified consolidated member directory
-            if not subs_df.empty:
-                
-                # Get member subscription data with join dates
-                # Get all subscriptions to show each member's join date
-                if "consolidated_members_cache" not in st.session_state:
-                    # Create a joined date column for members by getting their earliest subscription date
-                    members_with_joined = subs_df.sort_values("created_at").drop_duplicates("member_id")
-                    members_with_joined = members_with_joined[["member_id", "member_name", "member_email", "created_at", 
-                                                              "plan", "active", "is_education" if "is_education" in subs_df.columns else None]].dropna(axis=1)
-                    members_with_joined.rename(columns={"member_name": "name", "member_email": "email", "created_at": "joined_date"}, inplace=True)
-                    st.session_state.consolidated_members_cache = members_with_joined
-                
-                # Get the cached member data
-                consolidated_members = st.session_state.get("consolidated_members_cache", pd.DataFrame())
-                
-                # Apply filters to the cached data (client-side filtering)
-                filtered_members = consolidated_members.copy()
-                
-                # Create a column for the Memberful profile URL
-                filtered_members["memberful_url"] = filtered_members["member_id"].apply(
-                    lambda id: f"https://made.memberful.com/admin/members/{id}"
-                )
-                
-                # Set up display columns with join date
-                if "is_education" in filtered_members.columns:
-                    display_cols = ["name", "email", "joined_date", "plan", "active", "is_education", "memberful_url"]
-                    column_config = {
-                        "name": "Member Name",
-                        "email": "Email",
-                        "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-                        "plan": "Membership Plan",
-                        "active": st.column_config.CheckboxColumn("Active"),
-                        "is_education": st.column_config.CheckboxColumn("Education Member"),
-                        "memberful_url": st.column_config.LinkColumn("Memberful Profile")
-                    }
-                else:
-                    display_cols = ["name", "email", "joined_date", "plan", "active", "memberful_url"]
-                    column_config = {
-                        "name": "Member Name",
-                        "email": "Email", 
-                        "joined_date": st.column_config.DatetimeColumn("Joined", format="MMM DD, YYYY"),
-                        "plan": "Membership Plan",
-                        "active": st.column_config.CheckboxColumn("Active"),
-                        "memberful_url": st.column_config.LinkColumn("Memberful Profile")
-                    }
-                
-                # Display the complete member table with sorting capability
-                st.dataframe(
-                    filtered_members[display_cols].sort_values("joined_date", ascending=False),
-                    column_config=column_config,
-                    hide_index=True,
-                    height=600
-                )
-                
-                
+            show_member_directory(members_df, subs_df)
+            
 else:
     st.warning("No member data available. Please check your API connection.")
 

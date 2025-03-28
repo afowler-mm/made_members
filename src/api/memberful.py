@@ -1,5 +1,5 @@
 """
-API functions for the Maine Ad + Design membership dashboard
+Memberful API client for the Maine Ad + Design membership dashboard
 """
 import os
 import requests
