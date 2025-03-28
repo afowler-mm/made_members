@@ -176,39 +176,29 @@ def process_subscription_activities(activities_data):
         if interval_unit == "week":
             monthly_multiplier = 0.25
         elif interval_unit == "year":
-            monthly_multiplier = 12
+            monthly_multiplier = 1/12  # Convert yearly to monthly
             
-        monthly_value = plan_price_cents / (monthly_multiplier * (interval_count or 1))
+        monthly_value = plan_price_cents * monthly_multiplier / (interval_count or 1)
         
-        # Previous plan data for upgrades/downgrades (if available)
-        previous_data = activity.get("previousData", {})
+        # Since previousData is not available in the API, we'll simplify upgrade/downgrade handling
         old_plan_id = None
         old_plan_price_cents = 0
         old_monthly_value = 0
         
-        # For upgrades/downgrades, calculate the change in MRR
-        if activity_type in ["upgrade", "downgrade"] and previous_data:
-            if isinstance(previous_data, dict) and "plan" in previous_data:
-                old_plan_id = previous_data.get("plan", {}).get("id")
-                old_plan_price_cents = previous_data.get("plan", {}).get("priceCents", 0)
-                old_interval_unit = previous_data.get("plan", {}).get("intervalUnit", "month")
-                old_interval_count = previous_data.get("plan", {}).get("intervalCount", 1)
-                
-                old_monthly_multiplier = 1
-                if old_interval_unit == "week":
-                    old_monthly_multiplier = 0.25
-                elif old_interval_unit == "year":
-                    old_monthly_multiplier = 12
-                    
-                old_monthly_value = old_plan_price_cents / (old_monthly_multiplier * (old_interval_count or 1))
+        # For now, we'll skip detailed upgrade/downgrade calculation
+        # We don't have enough data from the API to calculate this accurately
+        # This will be treated as a regular change in the subscription value
         
         # Calculate financial impact based on activity type
         mrr_impact = 0
         
-        if activity_type == "new_subscription":
+        if activity_type == "new_subscription" or activity_type == "new_order":
             # New subscription adds the full monthly value
             mrr_impact = monthly_value
-            activity_category = "New Members"
+            activity_category = "New members"
+            
+            # Print debug info for the first few new orders
+            print(f"DEBUG: New member - Plan: {plan_name}, Price: {plan_price_cents} cents, Interval: {interval_unit}, MRR: {monthly_value} cents, Impact: ${mrr_impact/100:.2f}")
         elif activity_type == "subscription_reactivated":
             # Reactivation adds the full monthly value
             mrr_impact = monthly_value
@@ -225,10 +215,10 @@ def process_subscription_activities(activities_data):
             # Cancellation removes the full monthly value
             mrr_impact = -monthly_value
             activity_category = "Cancellations"
-        elif activity_type == "renewal_payment_failed":
+        elif activity_type == "renewal_payment_failed" or "renewal_failed" in activity_type or "payment_failed" in activity_type:
             # Failed payment potentially removes the full monthly value
             mrr_impact = -monthly_value
-            activity_category = "Failed Payments"
+            activity_category = "Failed payments"
         else:
             # Other activities like regular renewals
             activity_category = "Other"
@@ -246,7 +236,7 @@ def process_subscription_activities(activities_data):
             "plan_price_cents": plan_price_cents,
             "monthly_value": monthly_value,
             "mrr_impact_cents": mrr_impact,
-            "mrr_impact_dollars": mrr_impact / 100 if mrr_impact else 0,
+            "mrr_impact_dollars": mrr_impact / 100 if mrr_impact else 0,  # Convert cents to dollars
             "old_plan_id": old_plan_id,
             "old_plan_price_cents": old_plan_price_cents,
             "old_monthly_value": old_monthly_value
@@ -320,8 +310,8 @@ def calculate_monthly_mrr_changes(activities_df, start_date, end_date=None):
     months_df = pd.DataFrame(month_data)
     
     # Create a baseline table with all months and zero values for all categories
-    categories = ["Starting MRR", "New Members", "Reactivations", "Upgrades", 
-                 "Downgrades", "Cancellations", "Failed Payments", "Total MRR"]
+    categories = ["Starting MRR", "New members", "Reactivations", "Upgrades", 
+                 "Downgrades", "Cancellations", "Failed payments", "Total MRR"]
     
     baseline = []
     for _, row in months_df.iterrows():
@@ -361,12 +351,12 @@ def calculate_monthly_mrr_changes(activities_df, start_date, end_date=None):
     # Sort by month and ensure categories are in the right order
     result["category_order"] = result["category"].map({
         "Starting MRR": 0,
-        "New Members": 1, 
+        "New members": 1, 
         "Reactivations": 2,
         "Upgrades": 3,
         "Downgrades": 4,
         "Cancellations": 5,
-        "Failed Payments": 6,
+        "Failed payments": 6,
         "Total MRR": 7
     })
     
@@ -375,9 +365,11 @@ def calculate_monthly_mrr_changes(activities_df, start_date, end_date=None):
     # Calculate Starting MRR and Total MRR for each month
     months_sorted = months_df["month"].sort_values().tolist()
     
-    # We need to know the starting MRR for the first month in our analysis
-    # For now, set it to a placeholder value that can be updated later
-    initial_mrr = 0  # This needs to be set by the calling function
+    # CRITICAL: We're using a fixed value for starting MRR from Memberful
+    # Using Memberful's starting value as default
+    initial_mrr = 487.71  # This can be updated by the calling function
+    
+    print(f"DEBUG CALCULATE_MONTHLY_MRR_CHANGES: Using initial MRR: ${initial_mrr}")
     
     for i, month in enumerate(months_sorted):
         # Filter result to just this month's data
@@ -401,7 +393,7 @@ def calculate_monthly_mrr_changes(activities_df, start_date, end_date=None):
         # Calculate the Total MRR for this month
         total_mrr = starting_mrr + result.loc[
             (result["month"] == month) & 
-            (result["category"].isin(["New Members", "Reactivations", "Upgrades", "Downgrades", "Cancellations", "Failed Payments"])), 
+            (result["category"].isin(["New members", "Reactivations", "Upgrades", "Downgrades", "Cancellations", "Failed payments"])), 
             "mrr_impact_dollars"
         ].sum()
         

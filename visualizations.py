@@ -383,16 +383,16 @@ def show_member_growth(subs_df, activities_df=None):
         
 def show_mrr_waterfall(mrr_changes_df):
     """
-    Show Monthly Recurring Revenue changes as a waterfall chart
+    Show monthly recurring revenue changes as a waterfall chart
     
     This chart shows MRR changes by category:
     - Starting MRR
-    - New Members (positive)
+    - New members (positive)
     - Reactivations (positive)
     - Upgrades (positive)
     - Downgrades (negative)
     - Cancellations (negative)
-    - Failed Payments (negative)
+    - Failed payments (negative)
     - Total MRR (net)
     
     Args:
@@ -428,12 +428,12 @@ def show_mrr_waterfall(mrr_changes_df):
     # Define category colors
     category_colors = {
         "Starting MRR": "#1f77b4",  # Blue
-        "New Members": "#2ca02c",   # Green
+        "New members": "#2ca02c",   # Green
         "Reactivations": "#9467bd", # Purple
         "Upgrades": "#17becf",      # Cyan
         "Downgrades": "#ff7f0e",    # Orange
         "Cancellations": "#d62728", # Red
-        "Failed Payments": "#e377c2", # Pink
+        "Failed payments": "#e377c2", # Pink
         "Total MRR": "#1f77b4"      # Blue (same as starting)
     }
     
@@ -462,7 +462,7 @@ def show_mrr_waterfall(mrr_changes_df):
     
     # Create the figure
     fig = go.Figure(go.Waterfall(
-        name="MRR Changes",
+        name="MRR changes",
         orientation="v",
         measure=measure,
         x=categories,
@@ -478,7 +478,7 @@ def show_mrr_waterfall(mrr_changes_df):
     # Update layout
     fig.update_layout(
         title={
-            "text": f"MRR Changes for {month_display}",
+            "text": f"MRR changes for {month_display}",
             "y": 0.9,
             "x": 0.5,
             "xanchor": "center",
@@ -486,7 +486,7 @@ def show_mrr_waterfall(mrr_changes_df):
         },
         showlegend=False,
         xaxis_title="",
-        yaxis_title="Monthly Recurring Revenue ($)",
+        yaxis_title="Monthly recurring revenue ($)",
         yaxis=dict(
             gridcolor="lightgray"
         ),
@@ -498,7 +498,7 @@ def show_mrr_waterfall(mrr_changes_df):
     
     # Show month-over-month comparison
     if len(months) > 1 and selected_month_idx > 0:
-        st.subheader("Month-over-Month MRR Changes")
+        st.subheader("Month-over-month MRR changes")
         
         # Get current and previous month data
         current_month = months[selected_month_idx]
@@ -537,7 +537,7 @@ def show_mrr_waterfall(mrr_changes_df):
             )
     
     # Show detailed breakdown in a table
-    st.subheader(f"Detailed MRR Breakdown for {month_display}")
+    st.subheader(f"Detailed MRR breakdown for {month_display}")
     
     # Create a clean table for display
     table_data = month_data.copy()
@@ -601,14 +601,14 @@ def show_mrr_trend(mrr_changes_df):
     # Update layout
     fig.update_layout(
         title={
-            "text": "Monthly Recurring Revenue (MRR) Trend",
+            "text": "Monthly recurring revenue (MRR) trend",
             "y": 0.9,
             "x": 0.5,
             "xanchor": "center",
             "yanchor": "top"
         },
         xaxis_title="",
-        yaxis_title="Monthly Recurring Revenue ($)",
+        yaxis_title="Monthly recurring revenue ($)",
         yaxis=dict(
             gridcolor="lightgray"
         ),
@@ -643,7 +643,7 @@ def show_mrr_trend(mrr_changes_df):
         
         with col1:
             st.metric(
-                "Month-over-Month Growth", 
+                "Month-over-month growth", 
                 f"{mom_growth:.1f}%", 
                 f"${mom_growth_amount:+,.2f}"
             )
@@ -656,7 +656,7 @@ def show_mrr_trend(mrr_changes_df):
             
         with col3:
             st.metric(
-                "Estimated Annual Revenue", 
+                "Estimated annual revenue", 
                 f"${annual_mrr:,.2f}"
             )
             
@@ -686,7 +686,7 @@ def show_revenue_breakdown(activities_df):
     monthly_data = recent_activities.groupby(["month_name", "category"])["mrr_impact_dollars"].sum().reset_index()
     
     # Filter to only include main categories
-    categories = ["New Members", "Reactivations", "Upgrades", "Downgrades", "Cancellations", "Failed Payments"]
+    categories = ["New members", "Reactivations", "Upgrades", "Downgrades", "Cancellations", "Failed payments"]
     monthly_data = monthly_data[monthly_data["category"].isin(categories)]
     
     # Add month datetime for sorting
@@ -702,8 +702,8 @@ def show_revenue_breakdown(activities_df):
     month_labels = [m.strftime("%b %Y") for m in months]
     
     # Create stacked bar chart
-    positive_categories = ["New Members", "Reactivations", "Upgrades"]
-    negative_categories = ["Downgrades", "Cancellations", "Failed Payments"]
+    positive_categories = ["New members", "Reactivations", "Upgrades"]
+    negative_categories = ["Downgrades", "Cancellations", "Failed payments"]
     
     # Prepare data for visualization
     positive_data = monthly_data[monthly_data["category"].isin(positive_categories)].copy()
@@ -722,17 +722,17 @@ def show_revenue_breakdown(activities_df):
         y="mrr_impact_dollars",
         color="category",
         color_discrete_map={
-            "New Members": "#2ca02c",      # Green
+            "New members": "#2ca02c",      # Green
             "Reactivations": "#9467bd",    # Purple
             "Upgrades": "#17becf",         # Cyan
             "Downgrades": "#ff7f0e",       # Orange
             "Cancellations": "#d62728",    # Red
-            "Failed Payments": "#e377c2"   # Pink
+            "Failed payments": "#e377c2"   # Pink
         },
-        title="Monthly Revenue Changes by Category",
+        title="Monthly revenue changes by category",
         labels={
             "month_name": "",
-            "mrr_impact_dollars": "MRR Impact ($)",
+            "mrr_impact_dollars": "MRR impact ($)",
             "category": "Category"
         },
         barmode="relative"
@@ -745,7 +745,7 @@ def show_revenue_breakdown(activities_df):
             categoryarray=month_labels
         ),
         yaxis=dict(
-            title="MRR Impact ($)",
+            title="MRR impact ($)",
             gridcolor="lightgray"
         ),
         height=500,
@@ -762,7 +762,7 @@ def show_revenue_breakdown(activities_df):
     st.plotly_chart(fig, use_container_width=True)
     
     # Display net MRR change by month
-    st.subheader("Net MRR Change by Month")
+    st.subheader("Net MRR change by month")
     
     # Calculate net change by month
     net_by_month = monthly_data.groupby("month_name")["mrr_impact_dollars"].sum().reset_index()
@@ -779,7 +779,7 @@ def show_revenue_breakdown(activities_df):
         title="",
         labels={
             "month_name": "",
-            "mrr_impact_dollars": "Net MRR Change ($)"
+            "mrr_impact_dollars": "Net MRR change ($)"
         },
         color="mrr_impact_dollars",
         color_continuous_scale=["#d62728", "#d62728", "#ffffff", "#2ca02c", "#2ca02c"],
@@ -793,7 +793,7 @@ def show_revenue_breakdown(activities_df):
             categoryarray=month_labels
         ),
         yaxis=dict(
-            title="Net MRR Change ($)",
+            title="Net MRR change ($)",
             gridcolor="lightgray"
         ),
         height=400,

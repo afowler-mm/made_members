@@ -158,9 +158,8 @@ def fetch_subscription_activities(start_date, end_date=None, debug_mode=False):
         # Build pagination parameters
         pagination = f'first: 100, after: "{after_cursor}"' if after_cursor else 'first: 100'
         
-        # Build a simpler query based on the schema errors we saw
-        # We removed the type filter and the incorrect createdAt filter format
-        # We'll do date filtering in Python code instead
+        # Build a more complete query for activities
+        # We'll do date filtering in Python code instead of GraphQL
         
         # GraphQL query with only pagination
         paginated_query = f"""

@@ -101,6 +101,7 @@ def display_membership_metrics(subs_df):
             individual_count,
             f"{individual_change:+d} from last month"
         )
+        col1.caption("Includes education members")
         
         col2.metric(
             "Small business memberships", 
@@ -247,24 +248,41 @@ if 'members_df' in locals() and not members_df.empty:
     # Main Dashboard Tabs    
     # Create main tabs for the dashboard
     if "is_education" in subs_df.columns:
-        main_tabs = st.tabs(["Member Growth", "Plans and Revenue", "Education Members", "Member Directory"])
+        main_tabs = st.tabs(["Member growth", "Plans and revenue", "Education members", "Member directory"])
     else:
-        main_tabs = st.tabs(["Member Growth", "Plans and Revenue", "Member Directory"])
+        main_tabs = st.tabs(["Member growth", "Plans and revenue", "Member directory"])
     
     if not subs_df.empty:
         # Fetch activity data for enhanced visualizations if not already in session state
-        if "activities_cache" not in st.session_state:
+        # Always force refresh activity data to ensure calculations are updated
+        refresh_activities = True
+            
+        if refresh_activities:
             with st.spinner("Fetching recent subscription activities..."):
-                # Get activity data for the past 6 months
-                six_months_ago = datetime.now() - timedelta(days=180)
-                activities_data = api.fetch_subscription_activities(six_months_ago, debug_mode=debug_mode)
+                # Get activity data for the past 12 months for more complete financial history
+                twelve_months_ago = datetime.now() - timedelta(days=365)
+                activities_data = api.fetch_subscription_activities(twelve_months_ago, debug_mode=debug_mode)
                 
                 # Process activity data if we have any
                 if activities_data:
                     activities_df = data_processing.process_subscription_activities(activities_data)
+                    
+                    # Debug - check first few activities' monthly values
+                    if debug_mode and not activities_df.empty:
+                        st.write("First 5 activities MRR values:")
+                        debug_sample = activities_df.head(5)
+                        for i, row in debug_sample.iterrows():
+                            st.write(f"{row.get('type')} - {row.get('plan_name')} - ${row.get('mrr_impact_dollars'):.2f}/month")
+                    
+                    # Store in session state
                     st.session_state.activities_cache = activities_df
                 else:
                     st.session_state.activities_cache = pd.DataFrame()  # Empty DataFrame
+                    
+                # Force clear all computed MRR data to ensure fresh calculation
+                for key in list(st.session_state.keys()):
+                    if "mrr" in key.lower() and key != "activities_cache":
+                        del st.session_state[key]
         
         # Member Growth visualization
         with main_tabs[0]:
@@ -276,6 +294,8 @@ if 'members_df' in locals() and not members_df.empty:
                 show_member_growth(subs_df, st.session_state.activities_cache)
             else:
                 show_member_growth(subs_df)
+        
+        # Removed MRR Tracking tab - we'll implement this in the future
         
         # Combined Plans and Revenue visualization
         with main_tabs[1]:
