@@ -13,7 +13,7 @@ from utils import get_date_n_months_ago, is_education_member, create_download_bu
 import data_processing
 from data_processing import process_members_data, prepare_all_members_view, prepare_new_members, calculate_mrr
 import visualizations
-from visualizations import show_member_growth, show_plans_and_revenue, show_education_members, show_mrr_waterfall, show_mrr_trend, show_revenue_breakdown
+from visualizations import show_member_growth, show_plans_and_revenue, show_education_members, show_mrr_waterfall, show_mrr_trend, show_revenue_breakdown, show_member_activities
 
 def check_password():
     """Verify the user password or query string bypass"""
@@ -289,9 +289,9 @@ if 'members_df' in locals() and not members_df.empty:
     # Main Dashboard Tabs    
     # Create main tabs for the dashboard
     if "is_education" in subs_df.columns:
-        main_tabs = st.tabs(["Member growth", "Plans and revenue", "Education members", "Member directory"])
+        main_tabs = st.tabs(["Activities", "Member growth", "Plans and revenue", "Education members", "Member directory"])
     else:
-        main_tabs = st.tabs(["Member growth", "Plans and revenue", "Member directory"])
+        main_tabs = st.tabs(["Activities", "Member growth", "Plans and revenue", "Member directory"])
     
     if not subs_df.empty:
         # Fetch activity data for enhanced visualizations if not already in session state
@@ -325,8 +325,31 @@ if 'members_df' in locals() and not members_df.empty:
                     if "mrr" in key.lower() and key != "activities_cache":
                         del st.session_state[key]
         
-        # Member Growth visualization
+        # Activities tab (now the first tab)
         with main_tabs[0]:
+            # Show member activities if we have activity data
+            if "activities_cache" in st.session_state and not st.session_state.activities_cache.empty:
+                show_member_activities(st.session_state.activities_cache)
+            else:
+                st.info("No member activity data available.")
+                
+                # Add a button to fetch more activity data
+                if st.button("Fetch activity data"):
+                    with st.spinner("Fetching member activities..."):
+                        # Get activity data for the past 12 months
+                        twelve_months_ago = datetime.now() - timedelta(days=365)
+                        activities_data = api.fetch_subscription_activities(twelve_months_ago, debug_mode=debug_mode)
+                        
+                        # Process activity data if we have any
+                        if activities_data:
+                            activities_df = data_processing.process_subscription_activities(activities_data)
+                            st.session_state.activities_cache = activities_df
+                            st.rerun()
+                        else:
+                            st.error("Failed to fetch activity data. Please try again later.")
+        
+        # Member Growth visualization
+        with main_tabs[1]:
             display_membership_metrics(subs_df)
             st.divider()
             
@@ -336,19 +359,17 @@ if 'members_df' in locals() and not members_df.empty:
             else:
                 show_member_growth(subs_df)
         
-        # Removed MRR Tracking tab - we'll implement this in the future
-        
         # Combined Plans and Revenue visualization
-        with main_tabs[1]:
+        with main_tabs[2]:
             show_plans_and_revenue(subs_df)
         
         # Education Members visualization (if available)
         if "is_education" in subs_df.columns:
-            with main_tabs[2]:
+            with main_tabs[3]:
                 show_education_members(subs_df, active_count)
-                member_directory_tab_index = 3
+                member_directory_tab_index = 4
         else:
-            member_directory_tab_index = 2
+            member_directory_tab_index = 3
             
         # Member Directory tab
         with main_tabs[member_directory_tab_index]:
@@ -415,6 +436,7 @@ if 'members_df' in locals() and not members_df.empty:
                     hide_index=True,
                     height=600
                 )
+                
                 
 else:
     st.warning("No member data available. Please check your API connection.")

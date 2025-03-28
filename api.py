@@ -180,6 +180,14 @@ def fetch_subscription_activities(start_date, end_date=None, debug_mode=False):
                     }}
                     subscription {{
                         id
+                        orders {{
+                            coupon {{
+                                id
+                                code
+                                amountOffCents
+                            }}
+                            totalCents
+                        }}
                         plan {{
                             id
                             name

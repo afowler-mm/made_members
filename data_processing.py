@@ -153,94 +153,138 @@ def process_subscription_activities(activities_data):
     activity_records = []
     
     for activity in activities_data:
-        # Skip activities without subscription data
-        if not activity.get("subscription"):
-            continue
-            
         # Basic activity info
         activity_type = activity.get("type")
         created_at = activity.get("createdAt")
-        member_id = activity.get("member", {}).get("id")
-        member_name = activity.get("member", {}).get("fullName")
-        subscription_id = activity.get("subscription", {}).get("id")
+        member_info = activity.get("member", {})
+        member_id = member_info.get("id")
+        member_name = member_info.get("fullName")
+        member_email = member_info.get("email")
         
-        # Extract plan data
-        plan_data = activity.get("subscription", {}).get("plan", {})
-        plan_name = plan_data.get("name", "Unknown")
-        plan_price_cents = plan_data.get("priceCents", 0)
-        interval_unit = plan_data.get("intervalUnit", "month")
-        interval_count = plan_data.get("intervalCount", 1)
+        # Get subscription info if available
+        subscription_info = activity.get("subscription", {})
+        subscription_id = subscription_info.get("id") if subscription_info else None
         
-        # Calculate monthly value for MRR calculations
-        monthly_multiplier = 1
-        if interval_unit == "week":
-            monthly_multiplier = 0.25
-        elif interval_unit == "year":
-            monthly_multiplier = 1/12  # Convert yearly to monthly
-            
-        monthly_value = plan_price_cents * monthly_multiplier / (interval_count or 1)
-        
-        # Since previousData is not available in the API, we'll simplify upgrade/downgrade handling
-        old_plan_id = None
-        old_plan_price_cents = 0
-        old_monthly_value = 0
-        
-        # For now, we'll skip detailed upgrade/downgrade calculation
-        # We don't have enough data from the API to calculate this accurately
-        # This will be treated as a regular change in the subscription value
-        
-        # Calculate financial impact based on activity type
+        # Set defaults for financial calculations
         mrr_impact = 0
+        monthly_value = 0
+        plan_name = None
+        plan_price_cents = None
+        interval_unit = None
+        interval_count = None
+        activity_category = "Other"
         
-        if activity_type == "new_subscription" or activity_type == "new_order":
-            # New subscription adds the full monthly value
-            mrr_impact = monthly_value
-            activity_category = "New members"
+        # Check if member is an education member
+        is_education = False
+        
+        # Check by email domain (fallback method)
+        if member_email and member_email.lower().endswith((".edu", "@meca.edu", "@maine.edu", "@usm.maine.edu", "@mcad.edu")):
+            is_education = True
             
-            # Print debug info for the first few new orders
-            print(f"DEBUG: New member - Plan: {plan_name}, Price: {plan_price_cents} cents, Interval: {interval_unit}, MRR: {monthly_value} cents, Impact: ${mrr_impact/100:.2f}")
-        elif activity_type == "subscription_reactivated":
-            # Reactivation adds the full monthly value
-            mrr_impact = monthly_value
-            activity_category = "Reactivations"
-        elif activity_type == "upgrade":
-            # Upgrade adds the difference between new and old plan
-            mrr_impact = monthly_value - old_monthly_value
-            activity_category = "Upgrades"
-        elif activity_type == "downgrade":
-            # Downgrade subtracts the difference between old and new plan
-            mrr_impact = -(old_monthly_value - monthly_value)
-            activity_category = "Downgrades"
-        elif activity_type == "subscription_deleted" or activity_type == "subscription_deactivated":
-            # Cancellation removes the full monthly value
-            mrr_impact = -monthly_value
-            activity_category = "Cancellations"
-        elif activity_type == "renewal_payment_failed" or "renewal_failed" in activity_type or "payment_failed" in activity_type:
-            # Failed payment potentially removes the full monthly value
-            mrr_impact = -monthly_value
-            activity_category = "Failed payments"
-        else:
-            # Other activities like regular renewals
-            activity_category = "Other"
+        # Check by coupon code (primary method)
+        if subscription_info and subscription_info.get("orders"):
+            for order in subscription_info.get("orders", []):
+                coupon = order.get("coupon")
+                if coupon and coupon.get("code") and "education" in coupon.get("code", "").lower():
+                    is_education = True
+                    break
         
-        # Add record to the list
-        activity_records.append({
+        # Process subscription data if available
+        if subscription_info:
+            plan_data = subscription_info.get("plan", {})
+            plan_name = plan_data.get("name")
+            plan_price_cents = plan_data.get("priceCents")
+            interval_unit = plan_data.get("intervalUnit")
+            interval_count = plan_data.get("intervalCount", 1)
+            
+            # Calculate monthly value for MRR calculations
+            if plan_price_cents is not None and interval_unit is not None:
+                monthly_multiplier = 1
+                if interval_unit == "week":
+                    monthly_multiplier = 0.25
+                elif interval_unit == "year":
+                    monthly_multiplier = 1/12  # Convert yearly to monthly
+                    
+                monthly_value = plan_price_cents * monthly_multiplier / (interval_count or 1)
+                
+                # Education members don't contribute to MRR, set impact to 0
+                if is_education:
+                    mrr_impact = 0
+                    
+                    # Set category to education if it's a new membership or renewal
+                    if activity_type == "new_subscription" or activity_type == "new_order":
+                        activity_category = "Education members"
+                    elif activity_type == "renewal":
+                        activity_category = "Education renewals"
+                    elif activity_type == "subscription_deactivated":
+                        activity_category = "Education cancellations"
+                    else:
+                        activity_category = "Education changes"
+                else:
+                    # Non-education members - calculate financial impact based on activity type
+                    if activity_type == "new_subscription" or activity_type == "new_order":
+                        # New subscription adds the full monthly value
+                        mrr_impact = monthly_value
+                        activity_category = "New members"
+                    elif activity_type == "subscription_reactivated":
+                        # Reactivation adds the full monthly value
+                        mrr_impact = monthly_value
+                        activity_category = "Reactivations"
+                    elif activity_type == "upgrade":
+                        # Upgrade adds the difference between new and old plan (simplified)
+                        mrr_impact = monthly_value  # Without old plan data, this is approximate
+                        activity_category = "Upgrades"
+                    elif activity_type == "downgrade":
+                        # Downgrade (simplified without previous plan data)
+                        mrr_impact = -monthly_value  # Approximation
+                        activity_category = "Downgrades"
+                    elif activity_type == "subscription_deleted" or activity_type == "subscription_deactivated":
+                        # Cancellation removes the full monthly value
+                        mrr_impact = -monthly_value
+                        activity_category = "Cancellations"
+                    elif activity_type == "renewal_payment_failed" or "renewal_failed" in activity_type or "payment_failed" in activity_type:
+                        # Failed payment potentially removes the full monthly value
+                        mrr_impact = -monthly_value
+                        activity_category = "Failed payments"
+                    elif activity_type == "renewal":
+                        # Renewal is neutral for MRR calculation
+                        mrr_impact = 0
+                        activity_category = "Renewals"
+        
+        # Handle activities without subscription data
+        elif activity_type == "free_signup":
+            activity_category = "Free signups"
+        elif "team_member" in activity_type:
+            activity_category = "Team member changes"
+        elif "auto_renew" in activity_type:
+            activity_category = "Subscription changes"
+            
+        # Create a record for this activity
+        record = {
             "id": activity.get("id"),
             "type": activity_type,
             "category": activity_category,
             "created_at": datetime.fromtimestamp(created_at) if created_at else None,
             "member_id": member_id,
             "member_name": member_name,
+            "member_email": member_email,
             "subscription_id": subscription_id,
-            "plan_name": plan_name,
-            "plan_price_cents": plan_price_cents,
-            "monthly_value": monthly_value,
+            "is_education": is_education,
             "mrr_impact_cents": mrr_impact,
-            "mrr_impact_dollars": mrr_impact / 100 if mrr_impact else 0,  # Convert cents to dollars
-            "old_plan_id": old_plan_id,
-            "old_plan_price_cents": old_plan_price_cents,
-            "old_monthly_value": old_monthly_value
-        })
+            "mrr_impact_dollars": mrr_impact / 100 if mrr_impact else 0  # Convert cents to dollars
+        }
+        
+        # Add plan data if available
+        if subscription_info:
+            record.update({
+                "plan_name": plan_name,
+                "plan_price_cents": plan_price_cents,
+                "interval_unit": interval_unit,
+                "interval_count": interval_count,
+                "monthly_value": monthly_value
+            })
+        
+        activity_records.append(record)
     
     # Create DataFrame and sort by created_at
     activities_df = pd.DataFrame(activity_records)
