@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import plotly.express as px
+import hashlib
 
 # Import our custom modules
 import api
@@ -13,6 +14,40 @@ import data_processing
 from data_processing import process_members_data, prepare_all_members_view, prepare_new_members, calculate_mrr
 import visualizations
 from visualizations import show_member_growth, show_plans_and_revenue, show_education_members, show_mrr_waterfall, show_mrr_trend, show_revenue_breakdown
+
+def check_password():
+    """Verify the user password or query string bypass"""
+    # Define the password - you can change this to any password you want
+    correct_password = "madeindashboard"
+    hashed_password = hashlib.sha256(correct_password.encode()).hexdigest()
+    
+    # Check for query string parameter first
+    if "pass" in st.query_params:
+        query_password = st.query_params["pass"]
+        if hashlib.sha256(query_password.encode()).hexdigest() == hashed_password:
+            st.session_state["authenticated"] = True
+            # Remove password from URL to prevent accidental sharing
+            st.query_params.clear()
+            return True
+    
+    # If already authenticated, don't show login again
+    if "authenticated" in st.session_state and st.session_state["authenticated"]:
+        return True
+    
+    # Show login form
+    st.title("🔒 Login")
+    password = st.text_input("Enter dashboard password", type="password")
+    
+    if st.button("Login"):
+        if hashlib.sha256(password.encode()).hexdigest() == hashed_password:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password")
+            return False
+    
+    # If we get here, user has not authenticated
+    return False
 
 def display_membership_metrics(subs_df):
     """Display metrics about membership counts and revenue"""
@@ -136,8 +171,13 @@ st.set_page_config(
     layout="wide",
 )
 
+# Check for authentication before showing the main content
+if not check_password():
+    # Stop execution if not authenticated
+    st.stop()
+
 # Sidebar for filters and options
-st.title("Maine Ad + Design membership dashboard")
+st.sidebar.title("Maine Ad + Design membership dashboard")
 
 # Debug mode toggle
 debug_mode = st.sidebar.checkbox("Debug mode")
@@ -379,5 +419,10 @@ else:
     st.warning("No member data available. Please check your API connection.")
 
 # Footer
-st.markdown("---")
-st.caption("Made with ❤️ for Maine Ad + Design")
+st.sidebar.markdown("---")
+st.sidebar.caption("Made with ❤️ for Maine Ad + Design")
+
+# Add logout button
+if st.sidebar.button("Logout"):
+    st.session_state.pop("authenticated", None)
+    st.rerun()
