@@ -1,22 +1,51 @@
-# CLAUDE.md - Guidelines for AI Agent Usage
+# Maine Ad + Design Membership Dashboard
 
-## Commands
+A Streamlit app to visualize membership data for Maine Ad + Design members.
 
-- Run application: `streamlit run app.py`
-- Install dependencies: `pip install -r requirements.txt`
-- Run linting: `flake8 *.py`
-- Type checking: Not currently used in this project
+## Project Structure
 
-## Code Style Guidelines
+The project has been refactored into a modular structure:
 
-- **Imports**: Group standard library imports first, followed by third-party packages, then local imports
-- **Docstrings**: Use triple-quoted docstrings for modules and functions
-- **Function Names**: Use snake_case for function names
-- **Variable Names**: Use descriptive snake_case names
-- **Error Handling**: Use try-except blocks when dealing with external APIs or data parsing
-- **Type Hints**: Not currently used, but can be added when needed
-- **Formatting**: Follow PEP 8 style guide
-- **Comments**: Add comments for complex sections of code
-- **Documentation**: Include useful information in docstrings
-- **Streamlit Best Practices**: Use st.session_state for persistent data between reruns
-- **Data Processing**: Use pandas for data manipulation
+```
+.
+├── app.py                # Main entry point for the application
+├── CLAUDE.md             # Instructions for AI assistant
+├── README.md             # This file
+├── requirements.txt      # Dependencies
+└── src/                  # Source code modules
+    ├── api/              # API client code
+    │   ├── __init__.py
+    │   └── memberful.py  # Memberful API client
+    ├── data/             # Data processing modules
+    │   ├── __init__.py
+    │   ├── activities.py # Activity data processing
+    │   └── members.py    # Member data processing
+    ├── ui/               # UI components
+    │   ├── __init__.py
+    │   ├── auth.py       # Authentication components
+    │   ├── metrics.py    # Metrics display components
+    │   └── member_directory.py # Member directory components
+    ├── utils/            # Utility functions
+    │   ├── __init__.py
+    │   ├── date_utils.py # Date utilities
+    │   ├── data_utils.py # Data utilities
+    │   ├── member_utils.py # Member-specific utilities
+    │   └── ui_utils.py   # UI utility functions
+    └── visualizations/   # Visualization components
+        ├── __init__.py
+        ├── activities.py # Member activities visualization
+        ├── education.py  # Education member visualization
+        ├── member_growth.py # Member growth visualization
+        └── revenue.py    # Revenue visualization components
+```
+
+## Features
+
+- View active member count
+- Track new memberships over time
+- Monitor canceled memberships
+- Visualize member activity timeline
+- See revenue metrics and trends
+- Track education memberships
+- View detailed member information
+- Filter data by time period

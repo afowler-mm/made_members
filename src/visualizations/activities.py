@@ -6,7 +6,7 @@ import streamlit as st
 
 def show_member_activities(activities_df):
     """
-    Display recent member activities in reverse chronological order
+    Display recent member activities in reverse chronological order with pagination and filtering
     
     Args:
         activities_df (pd.DataFrame): DataFrame of processed activities
@@ -65,8 +65,8 @@ def show_member_activities(activities_df):
     # Default emoji for other activities
     default_emoji = "ℹ️"
     
-    # Fixed number of activities to show
-    num_activities = 100
+    # Number of activities to show per page
+    page_size = 50
     
     # Create a copy of the activities dataframe to avoid modifying the original
     display_activities = activities_df.copy()
@@ -190,11 +190,77 @@ def show_member_activities(activities_df):
     # Sort by created_at in descending order (newest first)
     display_activities = display_activities.sort_values("created_at", ascending=False)
     
-    # Limit number of activities to display
-    display_activities = display_activities.head(num_activities)
+    # Get unique activity types for filtering
+    activity_types = ["All types"] + sorted(display_activities["activity"].unique().tolist())
     
-    # Display as a compact linear feed
-    for i, activity in display_activities.iterrows():
+    # Cache processing using hash of the dataframe
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def process_filtered_activities(df, sel_type, pg_size, pg_num):
+        # Filter activities based on selected type
+        if sel_type != "All types":
+            filtered = df[df["activity"] == sel_type]
+        else:
+            filtered = df
+            
+        total_count = len(filtered)
+        total_pages = max(1, (total_count + pg_size - 1) // pg_size)
+        
+        # Ensure page number is valid
+        page = min(max(0, pg_num), total_pages - 1)
+        
+        # Get activities for the current page
+        start_idx = page * pg_size
+        end_idx = min(start_idx + pg_size, total_count)
+        current_page = filtered.iloc[start_idx:end_idx]
+        
+        return filtered, current_page, total_count, page, total_pages, start_idx, end_idx
+    
+    # Create a horizontal container for the filter and pagination
+    filter_container = st.container()
+    
+    # Create two columns for filter and page counter
+    filter_col, page_counter_col = st.columns([2, 1])
+    
+    # Initialize session state for activities page if not present
+    if "activities_page" not in st.session_state:
+        st.session_state.activities_page = 0
+    
+    # Initialize session state for activity type if not present
+    if "activity_type" not in st.session_state:
+        st.session_state.activity_type = "All types"
+    
+    # Add activity type filter in the first column
+    with filter_col:
+        selected_type = st.selectbox(
+            "Filter by activity type:", 
+            activity_types, 
+            index=activity_types.index(st.session_state.activity_type),
+            label_visibility="collapsed",
+            key="activity_filter"
+        )
+    
+    # Update session state if type changed (also reset page)
+    if selected_type != st.session_state.activity_type:
+        st.session_state.activity_type = selected_type
+        st.session_state.activities_page = 0
+    
+    # Process activities with caching
+    filtered_activities, current_page_activities, total_count, current_page, total_pages, start_idx, end_idx = process_filtered_activities(
+        display_activities, 
+        selected_type, 
+        page_size, 
+        st.session_state.activities_page
+    )
+    
+    # Display item range info in the second column
+    with page_counter_col:
+        if total_count > 0:
+            st.write(f"{start_idx + 1}–{end_idx} of {total_count}")
+        else:
+            st.write("0 items")
+    
+    # Display activities for the current page
+    for i, activity in current_page_activities.iterrows():
         # Create a compact row with emoji, description, and time
         with st.container():
             cols = st.columns([1, 15, 4])
@@ -208,6 +274,20 @@ def show_member_activities(activities_df):
             with cols[2]:
                 st.caption(activity["timestamp"])
     
+    # Show pagination controls
+    if total_pages > 1:
+        col1, col2, col3 = st.columns([1, 3, 1])
+        
+        with col1:
+            if st.button("← Previous"):
+                st.session_state.activities_page = max(0, st.session_state.activities_page - 1)
+                st.rerun()
+        
+        with col3:
+            if st.button("Next →"):
+                st.session_state.activities_page = min(total_pages - 1, st.session_state.activities_page + 1)
+                st.rerun()
+    
     # Show a message if no activities are available
-    if display_activities.empty:
-        st.info("No activities available to display.")
+    if filtered_activities.empty:
+        st.info(f"No {selected_type.lower() if selected_type != 'All types' else ''} activities available to display.")
