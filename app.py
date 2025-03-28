@@ -161,6 +161,7 @@ def display_membership_metrics(subs_df):
             f"${current_mrr:,.2f}", 
             f"{mrr_change_percent:+.1f}% from last month"
         )
+        col5.caption("⚠️ Note: May not yet be accurate. Check in [Memberful admin](https://made.memberful.com/admin/metrics/mrr).")
 
     return active_count
 
