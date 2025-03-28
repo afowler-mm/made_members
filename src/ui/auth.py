@@ -3,11 +3,12 @@ Authentication components for the dashboard
 """
 import streamlit as st
 import hashlib
+import os
 
 def check_password():
     """Verify the user password or query string bypass"""
-    # Define the password - you can change this to any password you want
-    correct_password = "madeindashboard"
+    # Get password from secrets
+    correct_password = st.secrets.get("DASHBOARD_PASSWORD", "CongressStreet")
     hashed_password = hashlib.sha256(correct_password.encode()).hexdigest()
     
     # Check for query string parameter first
