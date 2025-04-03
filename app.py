@@ -197,14 +197,14 @@ if 'members_df' in locals() and not members_df.empty:
         
         # Member Growth visualization
         with main_tabs[1]:
-            display_membership_metrics(subs_df)
+            display_membership_metrics(subs_df, members_data)
             st.divider()
             
-            # Pass activities data to show_member_growth if available
+            # Pass activities data and members_data to show_member_growth if available
             if "activities_cache" in st.session_state and not st.session_state.activities_cache.empty:
-                show_member_growth(subs_df, st.session_state.activities_cache)
+                show_member_growth(subs_df, st.session_state.activities_cache, members_data)
             else:
-                show_member_growth(subs_df)
+                show_member_growth(subs_df, members_data=members_data)
         
         # Combined Plans and Revenue visualization
         with main_tabs[2]:

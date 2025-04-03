@@ -3,12 +3,17 @@ Metrics display components for the dashboard
 """
 import streamlit as st
 from datetime import datetime, timedelta
-from ..data.members import calculate_mrr
+from ..data.members import calculate_mrr, calculate_recent_orders
 
-def display_membership_metrics(subs_df):
+def display_membership_metrics(subs_df, members_data=None):
     """Display metrics about membership counts and revenue"""
     # Calculate metrics
     current_mrr, paying_members_count, active_count, education_count = calculate_mrr(subs_df)
+    
+    # Calculate recent orders if members_data is provided
+    recent_orders_value = 0
+    if members_data:
+        recent_orders_value = calculate_recent_orders(members_data, days=30)
     
     # Store education count in session state for later use
     st.session_state.education_count = education_count
@@ -20,7 +25,7 @@ def display_membership_metrics(subs_df):
     past_year = today - timedelta(days=365)
     
     # Create columns for metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     # Calculate counts for different membership types
     if not subs_df.empty:
@@ -113,10 +118,42 @@ def display_membership_metrics(subs_df):
         )
         
         col5.metric(
-            "Monthly revenue", 
+            "Monthly recurring revenue", 
             f"${current_mrr:,.2f}", 
             f"{mrr_change_percent:+.1f}% from last month"
         )
-        col5.caption("⚠️ Note: May not yet be accurate. Check in [Memberful admin](https://made.memberful.com/admin/metrics/mrr).")
+        col5.caption("See more details in [Memberful admin](https://made.memberful.com/admin/metrics/mrr).")
+        
+        # Calculate 30-day orders for previous period to show delta
+        previous_30_days = 0
+        if members_data:
+            # Calculate orders from 60-30 days ago
+            today = datetime.now()
+            prev_period_start = today - timedelta(days=60)
+            prev_period_end = today - timedelta(days=30)
+            prev_period_start_ts = prev_period_start.timestamp()
+            prev_period_end_ts = prev_period_end.timestamp()
+            
+            for member in members_data:
+                for order in member.get("orders", []):
+                    order_time = order.get("createdAt", 0)
+                    if order.get("status") == "completed" and prev_period_start_ts <= order_time <= prev_period_end_ts:
+                        previous_30_days += order.get("totalCents", 0)
+            
+            previous_30_days = previous_30_days / 100  # Convert to dollars
+        
+        # Calculate delta percentage if previous period had orders
+        if previous_30_days > 0:
+            delta_pct = ((recent_orders_value - previous_30_days) / previous_30_days) * 100
+            delta_display = f"{delta_pct:+.1f}% vs previous 30 days"
+        else:
+            delta_display = None
+        
+        col6.metric(
+            "Orders in past 30 days", 
+            f"${recent_orders_value:,.2f}", 
+            delta_display
+        )
+        col6.caption("Total value of completed orders")
 
     return active_count

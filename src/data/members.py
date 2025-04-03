@@ -89,6 +89,23 @@ def prepare_new_members(subs_df, days=30):
     
     return unique_new
     
+def calculate_recent_orders(members_data, days=30):
+    """Calculate the total value of orders in the past N days"""
+    if not members_data:
+        return 0
+        
+    today = datetime.now()
+    cutoff_date = today - timedelta(days=days)
+    cutoff_timestamp = cutoff_date.timestamp()
+    
+    total_cents = 0
+    for member in members_data:
+        for order in member.get("orders", []):
+            if order.get("status") == "completed" and order.get("createdAt", 0) >= cutoff_timestamp:
+                total_cents += order.get("totalCents", 0)
+    
+    return total_cents / 100  # Convert cents to dollars
+
 def calculate_mrr(subs_df):
     """Calculate Monthly Recurring Revenue for active subscriptions"""
     if subs_df.empty:

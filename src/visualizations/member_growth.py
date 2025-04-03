@@ -4,15 +4,17 @@ Member growth visualization functions
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 
-def show_member_growth(subs_df, activities_df=None):
+def show_member_growth(subs_df, activities_df=None, members_data=None):
     """
     Show member growth visualization using Streamlit charts
     
     Args:
         subs_df: DataFrame of subscription data
         activities_df: Optional DataFrame of activity data from the Memberful API
+        members_data: Optional raw members data including orders
     """
     if subs_df.empty:
         st.info("No subscription data available for growth chart.")
@@ -378,3 +380,110 @@ def show_member_growth(subs_df, activities_df=None):
         st.plotly_chart(line_fig, use_container_width=True)
     else:
         st.info("No membership data available to display.")
+        
+    # PART 3: Monthly Revenue by Month
+    if members_data:
+        st.subheader("Monthly revenue")
+        
+        # Create a dictionary to store total revenue by month
+        monthly_revenue = {}
+        
+        # Process orders by month
+        for member in members_data:
+            for order in member.get("orders", []):
+                if order.get("status") == "completed":
+                    # Get order timestamp and convert to date
+                    timestamp = order.get("createdAt")
+                    if timestamp:
+                        # Convert timestamp to datetime
+                        order_date = datetime.fromtimestamp(timestamp)
+                        # Create month key (e.g., "Jan 2024")
+                        month_key = order_date.strftime("%b %Y")
+                        
+                        # Get order amount
+                        amount_cents = order.get("totalCents", 0)
+                        
+                        # Add to monthly total
+                        if month_key in monthly_revenue:
+                            monthly_revenue[month_key] += amount_cents
+                        else:
+                            monthly_revenue[month_key] = amount_cents
+        
+        if monthly_revenue:
+            # Convert to DataFrame
+            revenue_df = pd.DataFrame({
+                "Month": list(monthly_revenue.keys()),
+                "Revenue": [amt / 100 for amt in monthly_revenue.values()]  # Convert cents to dollars
+            })
+            
+            # Create month datetime for proper sorting
+            revenue_df["Month_dt"] = pd.to_datetime([
+                datetime.strptime(m, "%b %Y") if isinstance(m, str) else None 
+                for m in revenue_df["Month"]
+            ])
+            
+            # Sort by date
+            revenue_df = revenue_df.sort_values("Month_dt")
+            
+            # Calculate cumulative revenue
+            revenue_df["Cumulative Revenue"] = revenue_df["Revenue"].cumsum()
+            
+            # Create combined bar and line chart with two y-axes
+            fig = go.Figure()
+            
+            # Add bar chart for monthly revenue
+            fig.add_trace(
+                go.Bar(
+                    x=revenue_df["Month"],
+                    y=revenue_df["Revenue"],
+                    name="Monthly Revenue",
+                    marker_color="#1f77b4"
+                )
+            )
+            
+            # Add line chart for cumulative revenue
+            fig.add_trace(
+                go.Scatter(
+                    x=revenue_df["Month"],
+                    y=revenue_df["Cumulative Revenue"],
+                    name="Cumulative Revenue",
+                    mode="lines+markers",
+                    line=dict(color="#ff7f0e", width=3),
+                    marker=dict(size=8),
+                    yaxis="y2"
+                )
+            )
+            
+            # Update layout with second y-axis
+            fig.update_layout(
+                yaxis=dict(
+                    title=dict(text="Monthly Revenue ($)", font=dict(color="#1f77b4")),
+                    tickfont=dict(color="#1f77b4")
+                ),
+                yaxis2=dict(
+                    title=dict(text="Cumulative Revenue ($)", font=dict(color="#ff7f0e")),
+                    tickfont=dict(color="#ff7f0e"),
+                    overlaying="y",
+                    side="right"
+                ),
+                xaxis=dict(
+                    categoryorder='array',
+                    categoryarray=revenue_df["Month"].tolist(),
+                    title=""
+                ),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            # Display explanation
+            st.caption("Shows completed order revenue by month and cumulative total")
+            
+            # Display the chart
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No revenue data available to display.")
